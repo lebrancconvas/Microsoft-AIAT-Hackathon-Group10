@@ -81,9 +81,35 @@ function App() {
     setPredictions([])
     setErrorMessage('')
 
-    await new Promise((resolve) => setTimeout(resolve, 1600))
-    setPredictions(createMockPredictions(selectedFile.name))
-    setIsLoading(false)
+    // await new Promise((resolve) => setTimeout(resolve, 1600))
+    // setPredictions(createMockPredictions(selectedFile.name))
+
+    try {
+      const formData = new FormData();
+      formData.append("file", selectedFile); 
+
+      const response = await fetch("http://localhost:8000/api/predict", {
+        method: "POST",
+        body: formData
+      });
+
+      if (!response.ok) {
+        throw new Error(`Server responded with status: ${response.status}`)
+      }
+
+      const data = await response.json();
+      if(data && data.prediction) {
+        setPredictions(data.prediction);
+      } else {
+        setErrorMessage("Cannot get prediction data.");
+      }
+
+    } catch(err) {
+      console.error(`Prediction Error: ${err}`);
+      setErrorMessage("Cannot Predict.");
+    } finally {
+      setIsLoading(false)
+    }
   }
 
   return (
