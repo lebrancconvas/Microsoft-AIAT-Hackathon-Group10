@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import axios from 'axios';
 import './App.css'
 
 type Prediction = {
@@ -7,28 +8,28 @@ type Prediction = {
 }
 
 const ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/webp']
-const MOCK_LABELS = ['Cat', 'Dog', 'Car', 'Flower', 'Building', 'Food']
+// const MOCK_LABELS = ['Cat', 'Dog', 'Car', 'Flower', 'Building', 'Food']
 
-function getConfidenceSeed(text: string): number {
-  return text.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0)
-}
+// function getConfidenceSeed(text: string): number {
+//   return text.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0)
+// }
 
-function createMockPredictions(fileName: string): Prediction[] {
-  const seed = getConfidenceSeed(fileName) || 1
-  const firstIndex = seed % MOCK_LABELS.length
-  const secondIndex = (firstIndex + 2) % MOCK_LABELS.length
-  const thirdIndex = (firstIndex + 4) % MOCK_LABELS.length
+// function createMockPredictions(fileName: string): Prediction[] {
+//   const seed = getConfidenceSeed(fileName) || 1
+//   const firstIndex = seed % MOCK_LABELS.length
+//   const secondIndex = (firstIndex + 2) % MOCK_LABELS.length
+//   const thirdIndex = (firstIndex + 4) % MOCK_LABELS.length
 
-  const top = 0.75 + (seed % 15) / 100
-  const second = top - 0.17
-  const third = second - 0.14
+//   const top = 0.75 + (seed % 15) / 100
+//   const second = top - 0.17
+//   const third = second - 0.14
 
-  return [
-    { label: MOCK_LABELS[firstIndex], confidence: top },
-    { label: MOCK_LABELS[secondIndex], confidence: second },
-    { label: MOCK_LABELS[thirdIndex], confidence: third },
-  ]
-}
+//   return [
+//     { label: MOCK_LABELS[firstIndex], confidence: top },
+//     { label: MOCK_LABELS[secondIndex], confidence: second },
+//     { label: MOCK_LABELS[thirdIndex], confidence: third },
+//   ]
+// }
 
 function App() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
@@ -88,16 +89,13 @@ function App() {
       const formData = new FormData();
       formData.append("file", selectedFile); 
 
-      const response = await fetch("http://localhost:8000/api/predict", {
-        method: "POST",
-        body: formData
-      });
+      const response = await axios.post("http://localhost:8000/api/predict", formData);
 
-      if (!response.ok) {
+      if (!response) {
         throw new Error(`Server responded with status: ${response.status}`)
       }
 
-      const data = await response.json();
+      const data = await response.data;
       if(data && data.prediction) {
         setPredictions(data.prediction);
       } else {
