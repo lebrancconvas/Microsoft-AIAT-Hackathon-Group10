@@ -1,0 +1,32 @@
+/** Shared design tokens */
+export const theme = {
+  font: "'Noto Sans Thai', Inter, system-ui, sans-serif",
+  radius: { sm: '10px', md: '14px', lg: '20px', xl: '24px', pill: '999px' },
+  shadow: {
+    sm: '0 1px 2px rgba(15, 23, 42, 0.06)',
+    md: '0 4px 14px rgba(15, 23, 42, 0.08), 0 2px 4px rgba(15, 23, 42, 0.04)',
+    lg: '0 12px 40px rgba(14, 116, 144, 0.12), 0 4px 12px rgba(15, 23, 42, 0.06)',
+    btnPrimary: '0 8px 24px rgba(14, 165, 233, 0.35)',
+  },
+  color: {
+    bgPage: 'linear-gradient(165deg, #ecfeff 0%, #f8fafc 42%, #f1f5f9 100%)',
+    surface: '#ffffff',
+    surfaceMuted: 'rgba(248, 250, 252, 0.92)',
+    border: 'rgba(148, 163, 184, 0.35)',
+    borderStrong: 'rgba(148, 163, 184, 0.55)',
+    text: '#0f172a',
+    textMuted: '#64748b',
+    textSoft: '#475569',
+    primary: '#0ea5e9',
+    primaryDark: '#0284c7',
+    danger: '#f43f5e',
+    accentTeal: '#0d9488',
+    viewerBg: '#0c1222',
+    warningBg: '#fffbeb',
+    warningBorder: '#f59e0b',
+    warningText: '#92400e',
+    errorBg: '#fef2f2',
+    errorBorder: '#fca5a5',
+    errorText: '#dc2626',
+  },
+} as const;

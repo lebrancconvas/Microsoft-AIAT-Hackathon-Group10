@@ -1,42 +1,14 @@
 import { useCallback, useRef, useState, type ChangeEvent, type CSSProperties, type ReactNode } from 'react';
 import axios from 'axios';
+import { VisitInsightsSection } from './components/VisitInsights';
+import { Card } from './components/uiPrimitives';
+import { appendVisit, getLastVisit, getVisitHistory, listPatientDirectory, normalizePatientName } from './progression/store';
+import { buildClinicalSummaryLines } from './progression/summary';
+import { theme } from './theme';
 
 // const API_URL = import.meta.env.VITE_API_URL ?? 'https://awry-morality-garnet.ngrok-free.dev/predict';
 
 const API_URL = '/predict';
-
-/** Design tokens — presentation only */
-const theme = {
-  font: "'Noto Sans Thai', Inter, system-ui, sans-serif",
-  radius: { sm: '10px', md: '14px', lg: '20px', xl: '24px', pill: '999px' },
-  shadow: {
-    sm: '0 1px 2px rgba(15, 23, 42, 0.06)',
-    md: '0 4px 14px rgba(15, 23, 42, 0.08), 0 2px 4px rgba(15, 23, 42, 0.04)',
-    lg: '0 12px 40px rgba(14, 116, 144, 0.12), 0 4px 12px rgba(15, 23, 42, 0.06)',
-    btnPrimary: '0 8px 24px rgba(14, 165, 233, 0.35)',
-  },
-  color: {
-    bgPage: 'linear-gradient(165deg, #ecfeff 0%, #f8fafc 42%, #f1f5f9 100%)',
-    surface: '#ffffff',
-    surfaceMuted: 'rgba(248, 250, 252, 0.92)',
-    border: 'rgba(148, 163, 184, 0.35)',
-    borderStrong: 'rgba(148, 163, 184, 0.55)',
-    text: '#0f172a',
-    textMuted: '#64748b',
-    textSoft: '#475569',
-    primary: '#0ea5e9',
-    primaryDark: '#0284c7',
-    danger: '#f43f5e',
-    accentTeal: '#0d9488',
-    viewerBg: '#0c1222',
-    warningBg: '#fffbeb',
-    warningBorder: '#f59e0b',
-    warningText: '#92400e',
-    errorBg: '#fef2f2',
-    errorBorder: '#fca5a5',
-    errorText: '#dc2626',
-  },
-} as const;
 
 const SYMPTOM_OPTIONS = [
   { key: 'pain', label: 'เจ็บ/ปวดบริเวณแผล' },
@@ -66,22 +38,6 @@ function formatSymptomLine(keys: string[]): string {
 }
 
 /* ——— Presentational helpers (no business logic) ——— */
-
-function Card({ children, style }: { children: ReactNode; style?: CSSProperties }) {
-  return (
-    <div
-      style={{
-        backgroundColor: theme.color.surface,
-        borderRadius: theme.radius.lg,
-        border: `1px solid ${theme.color.border}`,
-        boxShadow: theme.shadow.md,
-        ...style,
-      }}
-    >
-      {children}
-    </div>
-  );
-}
 
 function SectionTitle({ title, hint, compact }: { title: string; hint?: string; compact?: boolean }) {
   return (
@@ -181,6 +137,9 @@ function App() {
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'overlay' | 'original'>('overlay');
+  const [patientName, setPatientName] = useState('');
+  const [sessionSummaryLines, setSessionSummaryLines] = useState<string[] | null>(null);
+  const lastAssessmentPatientRef = useRef<string | null>(null);
   const [timelineDay, setTimelineDay] = useState<number>(1);
   const [symptoms, setSymptoms] = useState<Record<SymptomKey, boolean>>({
     pain: false,
@@ -202,6 +161,7 @@ function App() {
     setResult(null);
     setErrorMessage(null);
     setActiveTab('overlay');
+    setSessionSummaryLines(null);
 
     const checkedKeys = SYMPTOM_OPTIONS.filter((o) => symptoms[o.key]).map((o) => o.key);
     const td = Math.min(365, Math.max(1, Math.floor(timelineDay) || 1));
@@ -215,6 +175,11 @@ function App() {
       const { data } = await axios.post<PredictResult>(API_URL, formData, {
         headers: { 'Content-Type': 'multipart/form-data' },
       });
+      const resolvedName = normalizePatientName(patientName);
+      const previous = getLastVisit(resolvedName);
+      appendVisit(resolvedName, data);
+      setSessionSummaryLines(buildClinicalSummaryLines(data, previous));
+      lastAssessmentPatientRef.current = resolvedName;
       setResult(data);
     } catch (err) {
       console.error('API Error:', err);
@@ -222,7 +187,7 @@ function App() {
     } finally {
       setIsLoading(false);
     }
-  }, [symptoms, timelineDay]);
+  }, [symptoms, timelineDay, patientName]);
 
   const handleNewImage = useCallback(
     (file: File | undefined | null) => {
@@ -243,6 +208,17 @@ function App() {
     },
     [handleNewImage]
   );
+
+  const handleSelectPatientFromDirectory = useCallback((name: string) => {
+    setPatientName(name);
+    if (name !== lastAssessmentPatientRef.current) {
+      setSessionSummaryLines(null);
+    }
+  }, []);
+
+  const chartPatientKey = normalizePatientName(patientName);
+  const progressionHistory = getVisitHistory(chartPatientKey);
+  const patientDirectory = listPatientDirectory();
 
   const btnBase: CSSProperties = {
     flex: 1,
@@ -333,6 +309,28 @@ function App() {
             title="ข้อมูลประกอบก่อนวิเคราะห์ภาพ"
             hint="ส่งพร้อมภาพเมื่อกดอัปโหลดหรือถ่ายภาพ"
           />
+          <label style={{ display: 'block', marginBottom: '10px' }}>
+            <FieldLabel dense>ชื่อผู้ป่วย / รหัส (สำหรับประวัติและกราฟ)</FieldLabel>
+            <input
+              type="text"
+              value={patientName}
+              onChange={(e) => setPatientName(e.target.value)}
+              placeholder="เช่น คุณสมชาย หรือ HN-1024"
+              disabled={isLoading}
+              autoComplete="name"
+              style={{
+                width: '100%',
+                padding: '8px 12px',
+                borderRadius: theme.radius.sm,
+                border: `1px solid ${theme.color.borderStrong}`,
+                fontSize: '15px',
+                color: theme.color.text,
+                fontFamily: theme.font,
+                backgroundColor: theme.color.surface,
+                boxShadow: 'inset 0 1px 2px rgba(15,23,42,0.04)',
+              }}
+            />
+          </label>
           <label style={{ display: 'block', marginBottom: '10px' }}>
             <FieldLabel dense>วันที่ติดตาม (วัน)</FieldLabel>
             <input
@@ -578,6 +576,17 @@ function App() {
 
               <div style={{ marginTop: '14px' }}>
                 <MetricTile label="สัดส่วนแผลต่อภาพ" value={`${result.wound_ratio_percent}%`} valueColor={theme.color.danger} />
+              </div>
+
+              <div style={{ marginTop: '22px' }}>
+                <VisitInsightsSection
+                  summaryLines={sessionSummaryLines}
+                  directory={patientDirectory}
+                  chartHistory={progressionHistory}
+                  chartPatientLabel={chartPatientKey}
+                  activePatientName={chartPatientKey}
+                  onSelectPatient={handleSelectPatientFromDirectory}
+                />
               </div>
 
               <div
