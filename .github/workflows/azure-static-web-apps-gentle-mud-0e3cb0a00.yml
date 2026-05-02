@@ -34,6 +34,9 @@ jobs:
         run: pnpm build
         env:
           VITE_API_URL: ${{ secrets.VITE_API_URL }}
+      
+      - name: Check dist size
+        run: du -sh web/dist && du -sh web/dist/*
 
       - name: Build And Deploy
         id: builddeploy
