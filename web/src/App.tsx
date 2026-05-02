@@ -31,6 +31,15 @@ type PredictResult = {
   overlay_base64: string;
 };
 
+async function fileToDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result ?? ''));
+    reader.onerror = () => reject(reader.error ?? new Error('ไม่สามารถอ่านไฟล์ภาพได้'));
+    reader.readAsDataURL(file);
+  });
+}
+
 function formatSymptomLine(keys: string[]): string {
   const labelByKey = Object.fromEntries(SYMPTOM_OPTIONS.map((o) => [o.key, o.label])) as Record<string, string>;
   if (!keys.length) return 'ไม่มีอาการที่เลือก';
@@ -172,12 +181,17 @@ function App() {
     formData.append('symptoms', checkedKeys.join(','));
 
     try {
+      const originalDataUrl = await fileToDataUrl(file);
       const { data } = await axios.post<PredictResult>(API_URL, formData, {
         headers: { 'Content-Type': 'multipart/form-data' },
       });
       const resolvedName = normalizePatientName(patientName);
       const previous = getLastVisit(resolvedName);
-      appendVisit(resolvedName, data);
+      appendVisit(resolvedName, {
+        ...data,
+        original_image_data_url: originalDataUrl,
+        overlay_image_data_url: `data:image/png;base64,${data.overlay_base64}`,
+      });
       setSessionSummaryLines(buildClinicalSummaryLines(data, previous));
       lastAssessmentPatientRef.current = resolvedName;
       setResult(data);

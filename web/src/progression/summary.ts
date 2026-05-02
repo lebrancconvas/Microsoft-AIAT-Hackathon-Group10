@@ -1,4 +1,3 @@
-import type { PredictSnapshotInput } from './store';
 import type { VisitRecord } from './types';
 
 const RATIO_EPS = 0.07;
@@ -6,7 +5,13 @@ const RATIO_EPS = 0.07;
 /**
  * Thai clinical-style summary lines comparing current predict vs previous visit (if any).
  */
-export function buildClinicalSummaryLines(current: PredictSnapshotInput, previous: VisitRecord | null): string[] {
+type SummaryInput = {
+  wound_area_pixels: number;
+  risk_score: number;
+  risk_level_th: string;
+};
+
+export function buildClinicalSummaryLines(current: SummaryInput, previous: VisitRecord | null): string[] {
   const lines: string[] = [];
 
   if (!previous) {

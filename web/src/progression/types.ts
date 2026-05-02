@@ -7,6 +7,9 @@ export type VisitRecord = {
   woundRatioPercent: number;
   riskScore: number;
   riskLevelTh: string;
+  symptomsChecked: string[];
+  originalImageDataUrl: string;
+  overlayImageDataUrl: string;
 };
 
 export type PatientDirectoryRow = {

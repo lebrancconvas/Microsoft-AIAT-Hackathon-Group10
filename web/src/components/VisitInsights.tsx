@@ -47,6 +47,40 @@ function DirectoryRow({
   );
 }
 
+function VisitHistoryItem({ visit }: { visit: VisitRecord }) {
+  const at = new Date(visit.at).toLocaleString('th-TH', { dateStyle: 'medium', timeStyle: 'short' });
+  return (
+    <div
+      style={{
+        border: `1px solid ${theme.color.border}`,
+        borderRadius: theme.radius.sm,
+        padding: '10px',
+        backgroundColor: 'rgba(248, 250, 252, 0.9)',
+      }}
+    >
+      <p style={{ margin: '0 0 8px 0', fontSize: '12px', color: theme.color.textMuted, fontWeight: 700 }}>{at}</p>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '8px' }}>
+        <img
+          src={visit.originalImageDataUrl}
+          alt="ภาพต้นฉบับย้อนหลัง"
+          style={{ width: '100%', aspectRatio: '4 / 3', objectFit: 'cover', borderRadius: '8px', border: `1px solid ${theme.color.border}` }}
+        />
+        <img
+          src={visit.overlayImageDataUrl}
+          alt="ภาพวิเคราะห์ย้อนหลัง"
+          style={{ width: '100%', aspectRatio: '4 / 3', objectFit: 'cover', borderRadius: '8px', border: `1px solid ${theme.color.border}` }}
+        />
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px', fontSize: '12px', color: theme.color.textSoft, fontWeight: 600 }}>
+        <span>พื้นที่: {visit.woundAreaPixels.toLocaleString()}</span>
+        <span>สัดส่วน: {visit.woundRatioPercent}%</span>
+        <span>Risk: {visit.riskScore} ({visit.riskLevelTh})</span>
+        <span>Timeline: วันที่ {visit.timelineDay}</span>
+      </div>
+    </div>
+  );
+}
+
 export function VisitInsightsSection({
   summaryLines,
   directory,
@@ -119,6 +153,20 @@ export function VisitInsightsSection({
           ผู้ป่วย: <strong style={{ color: theme.color.text }}>{chartPatientLabel}</strong> — {chartHistory.length} ครั้งที่บันทึก
         </p>
         <ProgressionChart visits={chartHistory} />
+      </Card>
+
+      <Card style={{ padding: '18px 18px' }}>
+        <h3 style={sectionTitleStyle}>ประวัติภาพและผลวิเคราะห์</h3>
+        <p style={{ margin: '0 0 12px 0', fontSize: '12px', color: theme.color.textMuted }}>
+          เรียงจากล่าสุดไปเก่าสุด สำหรับผู้ป่วยเดียวกัน
+        </p>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', maxHeight: '480px', overflowY: 'auto' }}>
+          {chartHistory.length === 0 ? (
+            <p style={{ margin: 0, fontSize: '13px', color: theme.color.textMuted }}>ยังไม่มีประวัติภาพของผู้ป่วยรายนี้</p>
+          ) : (
+            [...chartHistory].reverse().map((visit) => <VisitHistoryItem key={visit.id} visit={visit} />)
+          )}
+        </div>
       </Card>
     </div>
   );

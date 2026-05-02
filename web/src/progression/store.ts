@@ -9,7 +9,11 @@ export type PredictSnapshotInput = {
   wound_ratio_percent: number;
   risk_score: number;
   risk_level_th: string;
+  symptoms_checked: string[];
+  original_image_data_url: string;
+  overlay_image_data_url: string;
 };
+const MAX_VISITS_PER_PATIENT = 30;
 
 function safeParse(raw: string | null): Record<string, VisitRecord[]> {
   if (!raw) return {};
@@ -62,8 +66,14 @@ export function appendVisit(patientName: string, input: PredictSnapshotInput): V
     woundRatioPercent: input.wound_ratio_percent,
     riskScore: input.risk_score,
     riskLevelTh: input.risk_level_th,
+    symptomsChecked: input.symptoms_checked,
+    originalImageDataUrl: input.original_image_data_url,
+    overlayImageDataUrl: input.overlay_image_data_url,
   };
   list.push(record);
+  if (list.length > MAX_VISITS_PER_PATIENT) {
+    list.splice(0, list.length - MAX_VISITS_PER_PATIENT);
+  }
   store[patientName] = list;
   savePatientStore(store);
   return record;
