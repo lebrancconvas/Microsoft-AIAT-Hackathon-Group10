@@ -68,8 +68,17 @@ function formatSymptomsForHistory(keys: string[]): string {
     .join(' · ');
 }
 
+function formatObservationLongThai(ymd: string): string {
+  const parts = ymd.split('-').map(Number);
+  const y = parts[0];
+  const m = parts[1];
+  const d = parts[2];
+  if (!y || !m || !d) return ymd;
+  return new Date(y, m - 1, d).toLocaleDateString('th-TH', { dateStyle: 'long' });
+}
+
 function VisitHistoryItem({ visit }: { visit: VisitRecord }) {
-  const at = new Date(visit.at).toLocaleString('th-TH', { dateStyle: 'medium', timeStyle: 'short' });
+  const uploadClock = new Date(visit.at).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', hour12: false });
   return (
     <div
       style={{
@@ -79,7 +88,15 @@ function VisitHistoryItem({ visit }: { visit: VisitRecord }) {
         backgroundColor: 'rgba(248, 250, 252, 0.9)',
       }}
     >
-      <p style={{ margin: '0 0 8px 0', fontSize: '12px', color: theme.color.textMuted, fontWeight: 700 }}>{at}</p>
+      <div style={{ margin: '0 0 8px 0' }}>
+        <p style={{ margin: 0, fontSize: '13px', color: theme.color.text, fontWeight: 800 }}>
+          วันที่สังเกตการณ์:{' '}
+          {visit.observationDate ? formatObservationLongThai(visit.observationDate) : new Date(visit.at).toLocaleDateString('th-TH', { dateStyle: 'long' })}
+        </p>
+        <p style={{ margin: '4px 0 0 0', fontSize: '11px', color: theme.color.textMuted, fontWeight: 600 }}>
+          เวลาอัปโหลด: {uploadClock}
+        </p>
+      </div>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '8px' }}>
         <img
           src={visit.originalImageDataUrl}
@@ -96,7 +113,7 @@ function VisitHistoryItem({ visit }: { visit: VisitRecord }) {
         <span>พื้นที่: {visit.woundAreaPixels.toLocaleString()}</span>
         <span>สัดส่วน: {visit.woundRatioPercent}%</span>
         <span>Risk: {visit.riskScore} ({visit.riskLevelTh})</span>
-        <span>Timeline: วันที่ {visit.timelineDay}</span>
+        <span>ดัชนีติดตาม: วันที่ {visit.timelineDay}</span>
       </div>
       <p style={{ margin: '8px 0 0 0', fontSize: '12px', color: theme.color.text, fontWeight: 600, lineHeight: 1.45 }}>
         การบันทึกอาการ: {formatSymptomsForHistory(visit.symptomsChecked)}
@@ -111,6 +128,23 @@ function formatToggleDateTime(atIso: string): { date: string; time: string } {
     date: dt.toLocaleDateString('th-TH', { day: 'numeric', month: 'numeric', year: '2-digit' }),
     time: dt.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', hour12: false }),
   };
+}
+
+/** Chip top line = observation calendar date when known; bottom = upload time from `at`. */
+function chipLabelParts(visit: VisitRecord): { date: string; time: string } {
+  const upload = new Date(visit.at);
+  const time = upload.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', hour12: false });
+  if (visit.observationDate) {
+    const parts = visit.observationDate.split('-').map(Number);
+    const y = parts[0];
+    const m = parts[1];
+    const d = parts[2];
+    if (y && m && d) {
+      const dateStr = new Date(y, m - 1, d).toLocaleDateString('th-TH', { day: 'numeric', month: 'numeric', year: '2-digit' });
+      return { date: dateStr, time };
+    }
+  }
+  return formatToggleDateTime(visit.at);
 }
 
 export function VisitInsightsSection({
@@ -205,7 +239,7 @@ export function VisitInsightsSection({
       <Card style={{ padding: '18px 18px' }}>
         <h3 style={sectionTitleStyle}>ประวัติภาพและผลวิเคราะห์</h3>
         <p style={{ margin: '0 0 12px 0', fontSize: '12px', color: theme.color.textMuted }}>
-          แตะวันที่/เวลาเพื่อสลับดูรายการย้อนหลังของผู้ป่วยรายนี้
+          แตะวันที่สังเกตการณ์ (บรรทัดบน) / เวลาอัปโหลด (บรรทัดล่าง) เพื่อสลับดูประวัติ
         </p>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
           {historyDesc.length === 0 ? (
@@ -214,7 +248,7 @@ export function VisitInsightsSection({
             <>
               <div style={{ display: 'flex', gap: '8px', overflowX: 'auto', paddingBottom: '2px' }}>
                 {historyDesc.map((visit) => {
-                  const dt = formatToggleDateTime(visit.at);
+                  const dt = chipLabelParts(visit);
                   const isActive = selectedVisit?.id === visit.id;
                   return (
                     <button

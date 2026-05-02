@@ -4,6 +4,7 @@ const STORAGE_KEY = 'microsoft-ai-hack-g10-progression-v1';
 const DEFAULT_PATIENT_LABEL = 'ผู้ป่วยทั่วไป';
 
 export type PredictSnapshotInput = {
+  observation_date: string;
   timeline_day: number;
   wound_area_pixels: number;
   wound_ratio_percent: number;
@@ -14,6 +15,18 @@ export type PredictSnapshotInput = {
   overlay_image_data_url: string;
 };
 const MAX_VISITS_PER_PATIENT = 30;
+
+/** Observation calendar date + current clock time → ISO (same observation day, distinct uploads sort correctly). */
+function composeObservationInstant(observationDateYmd: string): string {
+  const parts = observationDateYmd.split('-').map(Number);
+  const y = parts[0];
+  const mo = parts[1];
+  const d = parts[2];
+  if (!y || !mo || !d) return new Date().toISOString();
+  const now = new Date();
+  const local = new Date(y, mo - 1, d, now.getHours(), now.getMinutes(), now.getSeconds(), now.getMilliseconds());
+  return local.toISOString();
+}
 
 function safeParse(raw: string | null): Record<string, VisitRecord[]> {
   if (!raw) return {};
@@ -60,7 +73,8 @@ export function appendVisit(patientName: string, input: PredictSnapshotInput): V
   const list = store[patientName] ?? [];
   const record: VisitRecord = {
     id: typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `v-${Date.now()}`,
-    at: new Date().toISOString(),
+    at: composeObservationInstant(input.observation_date),
+    observationDate: input.observation_date,
     timelineDay: input.timeline_day,
     woundAreaPixels: input.wound_area_pixels,
     woundRatioPercent: input.wound_ratio_percent,

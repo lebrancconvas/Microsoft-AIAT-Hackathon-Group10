@@ -27,6 +27,8 @@ type PredictResult = {
   risk_score: number;
   risk_level_th: string;
   timeline_day: number;
+  /** `YYYY-MM-DD` — observation date from form (ไม่ใช่เวลาอัปโหลด) */
+  observation_date?: string;
   symptoms_checked: string[];
   mask_base64: string;
   overlay_base64: string;
@@ -53,6 +55,15 @@ function formatSymptomLine(keys: string[]): string {
       return labelByKey[k] ?? k;
     })
     .join(' · ');
+}
+
+function formatObservationDateThai(ymd: string): string {
+  const parts = ymd.split('-').map(Number);
+  const y = parts[0];
+  const m = parts[1];
+  const d = parts[2];
+  if (!y || !m || !d) return ymd;
+  return new Date(y, m - 1, d).toLocaleDateString('th-TH', { dateStyle: 'long' });
 }
 
 function computeTimelineDayFromDate(selectedDate: string): number {
@@ -214,11 +225,21 @@ function App() {
       });
       const symptomsForDisplay =
         symptoms.other && customOther ? [...data.symptoms_checked, `other:${customOther}`] : data.symptoms_checked;
-      const enrichedResult: PredictResult = { ...data, symptoms_checked: symptomsForDisplay };
+      const enrichedResult: PredictResult = {
+        ...data,
+        symptoms_checked: symptomsForDisplay,
+        observation_date: timelineDate,
+      };
       const resolvedName = normalizePatientName(patientName);
       const previous = getLastVisit(resolvedName);
       appendVisit(resolvedName, {
-        ...enrichedResult,
+        observation_date: timelineDate,
+        timeline_day: enrichedResult.timeline_day,
+        wound_area_pixels: enrichedResult.wound_area_pixels,
+        wound_ratio_percent: enrichedResult.wound_ratio_percent,
+        risk_score: enrichedResult.risk_score,
+        risk_level_th: enrichedResult.risk_level_th,
+        symptoms_checked: enrichedResult.symptoms_checked,
         original_image_data_url: originalDataUrl,
         overlay_image_data_url: `data:image/png;base64,${data.overlay_base64}`,
       });
@@ -376,7 +397,7 @@ function App() {
             />
           </label>
           <label style={{ display: 'block', marginBottom: '10px' }}>
-            <FieldLabel dense>วันที่ติดตาม</FieldLabel>
+            <FieldLabel dense>วันที่สังเกตการณ์</FieldLabel>
             <input
               type="date"
               value={timelineDate}
@@ -396,6 +417,9 @@ function App() {
                 boxShadow: 'inset 0 1px 2px rgba(15,23,42,0.04)',
               }}
             />
+            <p style={{ margin: '6px 0 0 0', fontSize: '11px', color: theme.color.textMuted, lineHeight: 1.35 }}>
+              วันที่นี้จะถูกบันทึกเป็นวันที่สังเกตการณ์เมื่ออัปโหลดภาพ (ไม่ใช่วันที่บันทึกตามเวลาอุปกรณ์เพียงอย่างเดียว)
+            </p>
           </label>
           <FieldLabel dense>การบันทึกอาการ (Symptom check-in)</FieldLabel>
           <div
@@ -639,7 +663,16 @@ function App() {
                   value={<span style={{ fontSize: '15px', fontWeight: 700, lineHeight: 1.45 }}>{formatSymptomLine(result.symptoms_checked)}</span>}
                   valueColor={theme.color.text}
                 />
-                <MetricTile label="Timeline" value={`วันที่ ${result.timeline_day}`} valueColor={theme.color.text} />
+                <MetricTile
+                  label="วันที่สังเกตการณ์"
+                  value={result.observation_date ? formatObservationDateThai(result.observation_date) : '-'}
+                  valueColor={theme.color.text}
+                  footer={
+                    <span style={{ fontSize: '13px', fontWeight: 700, color: theme.color.textSoft }}>
+                      ดัชนีติดตาม (ส่ง API): วันที่ {result.timeline_day}
+                    </span>
+                  }
+                />
               </div>
 
               <div style={{ marginTop: '14px' }}>
