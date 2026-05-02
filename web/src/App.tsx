@@ -2,6 +2,7 @@ import { useCallback, useRef, useState, type ChangeEvent, type CSSProperties, ty
 import axios from 'axios';
 import { VisitInsightsSection } from './components/VisitInsights';
 import { Card } from './components/uiPrimitives';
+import { compressDataUrlForStorage } from './compressDataUrl';
 import { appendVisit, getLastVisit, getVisitHistory, listPatientDirectory, normalizePatientName } from './progression/store';
 import { buildClinicalSummaryLines } from './progression/summary';
 import { theme } from './theme';
@@ -227,6 +228,7 @@ function App() {
 
     try {
       const originalDataUrl = await fileToDataUrl(file);
+      const originalForHistory = await compressDataUrlForStorage(originalDataUrl);
       const { data } = await axios.post<PredictResult>(API_URL, formData, {
         headers: { 'Content-Type': 'multipart/form-data' },
       });
@@ -246,7 +248,7 @@ function App() {
         risk_score: enrichedResult.risk_score,
         risk_level_th: enrichedResult.risk_level_th,
         symptoms_checked: enrichedResult.symptoms_checked,
-        original_image_data_url: originalDataUrl,
+        original_image_data_url: originalForHistory,
         overlay_image_data_url: `data:image/png;base64,${data.overlay_base64}`,
       });
       if (!appendOutcome.savedToLocalStorage) {

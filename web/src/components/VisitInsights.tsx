@@ -81,7 +81,15 @@ function formatUploadDateTimeThai(atIso: string): string {
   return new Date(atIso).toLocaleString('th-TH', { dateStyle: 'medium', timeStyle: 'short' });
 }
 
+/** Older saves replaced the original with a 1×1 PNG; stretched with object-fit it looked like a flat red/pink block. */
+function isLegacyTinyOriginalPlaceholder(url: string): boolean {
+  if (!url.startsWith('data:image/png')) return false;
+  return url.startsWith('data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAAB') || url.length < 280;
+}
+
 function VisitHistoryItem({ visit }: { visit: VisitRecord }) {
+  const originalBroken = isLegacyTinyOriginalPlaceholder(visit.originalImageDataUrl);
+
   return (
     <div
       style={{
@@ -101,11 +109,35 @@ function VisitHistoryItem({ visit }: { visit: VisitRecord }) {
         </p>
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '8px' }}>
-        <img
-          src={visit.originalImageDataUrl}
-          alt="ภาพต้นฉบับย้อนหลัง"
-          style={{ width: '100%', aspectRatio: '4 / 3', objectFit: 'cover', borderRadius: '8px', border: `1px solid ${theme.color.border}` }}
-        />
+        {originalBroken ? (
+          <div
+            style={{
+              width: '100%',
+              aspectRatio: '4 / 3',
+              borderRadius: '8px',
+              border: `1px dashed ${theme.color.border}`,
+              backgroundColor: 'rgba(241, 245, 249, 0.95)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              padding: '12px',
+              textAlign: 'center',
+              fontSize: '11px',
+              fontWeight: 600,
+              color: theme.color.textMuted,
+              lineHeight: 1.45,
+              boxSizing: 'border-box',
+            }}
+          >
+            ภาพต้นฉบับในรายการเก่าถูกบันทึกเป็นภาพจุดเดียว (เลยเห็นเป็นสี่เหลี่ยมสี) — วิเคราะห์ภาพใหม่ครั้งหนึ่งเพื่อเก็บภาพปกติทางซ้าย
+          </div>
+        ) : (
+          <img
+            src={visit.originalImageDataUrl}
+            alt="ภาพต้นฉบับย้อนหลัง"
+            style={{ width: '100%', aspectRatio: '4 / 3', objectFit: 'cover', borderRadius: '8px', border: `1px solid ${theme.color.border}` }}
+          />
+        )}
         <img
           src={visit.overlayImageDataUrl}
           alt="ภาพวิเคราะห์ย้อนหลัง"

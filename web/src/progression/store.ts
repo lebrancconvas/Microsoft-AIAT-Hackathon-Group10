@@ -3,10 +3,6 @@ import type { PatientDirectoryRow, VisitRecord } from './types';
 const STORAGE_KEY = 'microsoft-ai-hack-g10-progression-v1';
 const DEFAULT_PATIENT_LABEL = 'ผู้ป่วยทั่วไป';
 
-/** Minimal placeholder when trimming payload so localStorage quota fits */
-const TINY_PNG_DATA_URL =
-  'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
-
 export type PredictSnapshotInput = {
   observation_date: string;
   timeline_day: number;
@@ -133,9 +129,8 @@ export type AppendVisitOutcome = {
 };
 
 /**
- * Persist a new visit. Drops oldest saved visits (by observation date) if quota is exceeded,
- * then may replace the original-image payload with a tiny placeholder so at least overlay + metrics persist.
- * If localStorage still fails, keeps this tab's history in memory so charts/history render immediately.
+ * Persist a new visit. Drops oldest saved visits (by observation date) if quota is exceeded.
+ * If localStorage still fails, keeps this tab's history in memory (same payloads — originals should be JPEG‑compressed in the client first).
  */
 export function appendVisit(patientName: string, input: PredictSnapshotInput): AppendVisitOutcome {
   const baseRecord: VisitRecord = {
@@ -154,22 +149,17 @@ export function appendVisit(patientName: string, input: PredictSnapshotInput): A
 
   const sortedBase = [...visitsForPatientMerged(patientName)].sort(compareVisitsByObservationThenAt);
 
-  const attempts: VisitRecord[] = [baseRecord, { ...baseRecord, originalImageDataUrl: TINY_PNG_DATA_URL }];
-
-  for (const candidate of attempts) {
-    for (let dropCount = 0; dropCount <= sortedBase.length; dropCount++) {
-      const merged = trimToMaxOldestFirst([...sortedBase.slice(dropCount), candidate].sort(compareVisitsByObservationThenAt));
-      if (tryPersistPatientList(patientName, merged)) {
-        delete memorySessionByPatient[patientName];
-        return { record: candidate, savedToLocalStorage: true };
-      }
+  for (let dropCount = 0; dropCount <= sortedBase.length; dropCount++) {
+    const merged = trimToMaxOldestFirst([...sortedBase.slice(dropCount), baseRecord].sort(compareVisitsByObservationThenAt));
+    if (tryPersistPatientList(patientName, merged)) {
+      delete memorySessionByPatient[patientName];
+      return { record: baseRecord, savedToLocalStorage: true };
     }
   }
 
-  const fallback = attempts[1];
-  const mergedMem = trimToMaxOldestFirst([...sortedBase, fallback].sort(compareVisitsByObservationThenAt));
+  const mergedMem = trimToMaxOldestFirst([...sortedBase, baseRecord].sort(compareVisitsByObservationThenAt));
   memorySessionByPatient[patientName] = mergedMem;
-  return { record: fallback, savedToLocalStorage: false };
+  return { record: baseRecord, savedToLocalStorage: false };
 }
 
 export function listPatientDirectory(): PatientDirectoryRow[] {
