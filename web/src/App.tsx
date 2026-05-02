@@ -194,6 +194,7 @@ function App() {
     other: false,
   });
   const [otherSymptomText, setOtherSymptomText] = useState('');
+  const [photoTipsOpen, setPhotoTipsOpen] = useState<boolean>(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
@@ -500,6 +501,88 @@ function App() {
               </div>
             ))}
           </div>
+        </Card>
+
+        <Card
+          style={{
+            padding: photoTipsOpen ? '10px 12px' : '8px 12px',
+            marginBottom: '12px',
+            borderLeft: `3px solid ${theme.color.accentTeal}`,
+            background: 'rgba(13, 148, 136, 0.04)',
+          }}
+        >
+          <button
+            type="button"
+            onClick={() => setPhotoTipsOpen((v) => !v)}
+            aria-expanded={photoTipsOpen}
+            style={{
+              width: '100%',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: '10px',
+              border: 'none',
+              background: 'transparent',
+              color: theme.color.text,
+              padding: 0,
+              cursor: 'pointer',
+              fontFamily: theme.font,
+              minHeight: '20px',
+            }}
+          >
+            <span style={{ display: 'flex', alignItems: 'center', gap: '6px', minWidth: 0 }}>
+              <span aria-hidden style={{ fontSize: '14px', flexShrink: 0 }}>💡</span>
+              <span
+                style={{
+                  fontSize: '12.5px',
+                  fontWeight: 700,
+                  letterSpacing: '-0.01em',
+                  whiteSpace: 'nowrap',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                }}
+              >
+                คำแนะนำการถ่ายรูปให้ชัด เปรียบเทียบได้
+              </span>
+            </span>
+            <span
+              aria-hidden
+              style={{
+                fontSize: '10px',
+                fontWeight: 800,
+                color: theme.color.accentTeal,
+                padding: '2px 8px',
+                borderRadius: theme.radius.pill,
+                backgroundColor: 'rgba(13, 148, 136, 0.12)',
+                flexShrink: 0,
+              }}
+            >
+              {photoTipsOpen ? 'ซ่อน' : 'ดู 6 ข้อ'}
+            </span>
+          </button>
+          {photoTipsOpen ? (
+            <ul
+              style={{
+                margin: '6px 0 0 0',
+                paddingLeft: '16px',
+                color: theme.color.textSoft,
+                fontSize: '11.5px',
+                lineHeight: 1.4,
+                fontWeight: 500,
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+                columnGap: '14px',
+                rowGap: '2px',
+              }}
+            >
+              <li>แสงสว่างพอ ไม่ย้อนแสง และไม่มีเงาทับแผล</li>
+              <li>ระยะใกล้พอ — เห็นแผลเต็มเฟรม + ผิวรอบเล็กน้อย</li>
+              <li>ถือนิ่ง โฟกัสคมก่อนกด (จิ้มที่แผลเพื่อโฟกัส)</li>
+              <li>เช็ดเลือด/หนองและทำความสะอาดให้เห็นขอบแผลชัด</li>
+              <li>ถอดผ้าพันแผล ไม่มีนิ้ว/มือ/ขน บังพื้นที่แผล</li>
+              <li>ถ่ายมุม/ระยะใกล้เคียงเดิมในครั้งถัดไปเพื่อเปรียบเทียบ</li>
+            </ul>
+          ) : null}
         </Card>
 
         <div style={{ display: 'flex', gap: '12px', marginBottom: '22px' }}>
