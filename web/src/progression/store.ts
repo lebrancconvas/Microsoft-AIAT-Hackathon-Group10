@@ -3,6 +3,10 @@ import type { PatientDirectoryRow, VisitRecord } from './types';
 const STORAGE_KEY = 'microsoft-ai-hack-g10-progression-v1';
 const DEFAULT_PATIENT_LABEL = 'ผู้ป่วยทั่วไป';
 
+/** Minimal placeholder when trimming payload so localStorage quota fits */
+const TINY_PNG_DATA_URL =
+  'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+
 export type PredictSnapshotInput = {
   observation_date: string;
   timeline_day: number;
@@ -16,16 +20,23 @@ export type PredictSnapshotInput = {
 };
 const MAX_VISITS_PER_PATIENT = 30;
 
-/** Observation calendar date + current clock time → ISO (same observation day, distinct uploads sort correctly). */
-function composeObservationInstant(observationDateYmd: string): string {
-  const parts = observationDateYmd.split('-').map(Number);
+function observationDayStartMs(ymd: string): number | null {
+  const parts = ymd.split('-').map(Number);
   const y = parts[0];
   const mo = parts[1];
   const d = parts[2];
-  if (!y || !mo || !d) return new Date().toISOString();
-  const now = new Date();
-  const local = new Date(y, mo - 1, d, now.getHours(), now.getMinutes(), now.getSeconds(), now.getMilliseconds());
-  return local.toISOString();
+  if (!y || !mo || !d) return null;
+  return new Date(y, mo - 1, d).getTime();
+}
+
+/** Sort oldest → newest observation, then earlier upload first */
+export function compareVisitsByObservationThenAt(a: VisitRecord, b: VisitRecord): number {
+  const ma = a.observationDate ? observationDayStartMs(a.observationDate) : null;
+  const mb = b.observationDate ? observationDayStartMs(b.observationDate) : null;
+  const ta = ma ?? new Date(a.at).getTime();
+  const tb = mb ?? new Date(b.at).getTime();
+  if (ta !== tb) return ta - tb;
+  return new Date(a.at).getTime() - new Date(b.at).getTime();
 }
 
 function safeParse(raw: string | null): Record<string, VisitRecord[]> {
@@ -39,17 +50,52 @@ function safeParse(raw: string | null): Record<string, VisitRecord[]> {
   }
 }
 
-export function loadPatientStore(): Record<string, VisitRecord[]> {
+/** Raw disk snapshot only (no in-memory overlay). */
+function readLocalStorageStore(): Record<string, VisitRecord[]> {
   if (typeof localStorage === 'undefined') return {};
   return safeParse(localStorage.getItem(STORAGE_KEY));
 }
 
-export function savePatientStore(store: Record<string, VisitRecord[]>): void {
-  if (typeof localStorage === 'undefined') return;
+/**
+ * When localStorage is full or blocked, visits for this tab live here so the UI still updates.
+ * Lost on full page reload — acceptable fallback for demos / privacy modes.
+ */
+const memorySessionByPatient: Record<string, VisitRecord[]> = {};
+
+function dedupeVisitsById(lists: VisitRecord[][]): VisitRecord[] {
+  const map = new Map<string, VisitRecord>();
+  for (const list of lists) {
+    for (const v of list) {
+      map.set(v.id, v);
+    }
+  }
+  return Array.from(map.values());
+}
+
+function visitsForPatientMerged(patientName: string): VisitRecord[] {
+  const ls = readLocalStorageStore()[patientName] ?? [];
+  const mem = memorySessionByPatient[patientName] ?? [];
+  return dedupeVisitsById([ls, mem]);
+}
+
+export function loadPatientStore(): Record<string, VisitRecord[]> {
+  const ls = readLocalStorageStore();
+  const keys = Array.from(new Set([...Object.keys(ls), ...Object.keys(memorySessionByPatient)]));
+  const out: Record<string, VisitRecord[]> = {};
+  for (const k of keys) {
+    const merged = [...visitsForPatientMerged(k)].sort(compareVisitsByObservationThenAt);
+    if (merged.length) out[k] = merged;
+  }
+  return out;
+}
+
+export function savePatientStore(store: Record<string, VisitRecord[]>): boolean {
+  if (typeof localStorage === 'undefined') return false;
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(store));
+    return true;
   } catch {
-    /* quota / private mode */
+    return false;
   }
 }
 
@@ -59,21 +105,42 @@ export function normalizePatientName(raw: string): string {
 }
 
 export function getLastVisit(patientName: string): VisitRecord | null {
-  const list = loadPatientStore()[patientName];
-  if (!list?.length) return null;
-  return list[list.length - 1];
+  const sorted = [...visitsForPatientMerged(patientName)].sort(compareVisitsByObservationThenAt);
+  return sorted.length ? sorted[sorted.length - 1] : null;
 }
 
 export function getVisitHistory(patientName: string): VisitRecord[] {
-  return [...(loadPatientStore()[patientName] ?? [])];
+  const list = [...visitsForPatientMerged(patientName)];
+  list.sort(compareVisitsByObservationThenAt);
+  return list;
 }
 
-export function appendVisit(patientName: string, input: PredictSnapshotInput): VisitRecord {
-  const store = loadPatientStore();
-  const list = store[patientName] ?? [];
-  const record: VisitRecord = {
+function trimToMaxOldestFirst(list: VisitRecord[]): VisitRecord[] {
+  const next = [...list];
+  while (next.length > MAX_VISITS_PER_PATIENT) next.shift();
+  return next;
+}
+
+function tryPersistPatientList(patientName: string, list: VisitRecord[]): boolean {
+  const store = { ...readLocalStorageStore(), [patientName]: list };
+  return savePatientStore(store);
+}
+
+export type AppendVisitOutcome = {
+  record: VisitRecord;
+  /** false = kept in tab memory only (quota / private mode); UI still updates */
+  savedToLocalStorage: boolean;
+};
+
+/**
+ * Persist a new visit. Drops oldest saved visits (by observation date) if quota is exceeded,
+ * then may replace the original-image payload with a tiny placeholder so at least overlay + metrics persist.
+ * If localStorage still fails, keeps this tab's history in memory so charts/history render immediately.
+ */
+export function appendVisit(patientName: string, input: PredictSnapshotInput): AppendVisitOutcome {
+  const baseRecord: VisitRecord = {
     id: typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `v-${Date.now()}`,
-    at: composeObservationInstant(input.observation_date),
+    at: new Date().toISOString(),
     observationDate: input.observation_date,
     timelineDay: input.timeline_day,
     woundAreaPixels: input.wound_area_pixels,
@@ -84,13 +151,25 @@ export function appendVisit(patientName: string, input: PredictSnapshotInput): V
     originalImageDataUrl: input.original_image_data_url,
     overlayImageDataUrl: input.overlay_image_data_url,
   };
-  list.push(record);
-  if (list.length > MAX_VISITS_PER_PATIENT) {
-    list.splice(0, list.length - MAX_VISITS_PER_PATIENT);
+
+  const sortedBase = [...visitsForPatientMerged(patientName)].sort(compareVisitsByObservationThenAt);
+
+  const attempts: VisitRecord[] = [baseRecord, { ...baseRecord, originalImageDataUrl: TINY_PNG_DATA_URL }];
+
+  for (const candidate of attempts) {
+    for (let dropCount = 0; dropCount <= sortedBase.length; dropCount++) {
+      const merged = trimToMaxOldestFirst([...sortedBase.slice(dropCount), candidate].sort(compareVisitsByObservationThenAt));
+      if (tryPersistPatientList(patientName, merged)) {
+        delete memorySessionByPatient[patientName];
+        return { record: candidate, savedToLocalStorage: true };
+      }
+    }
   }
-  store[patientName] = list;
-  savePatientStore(store);
-  return record;
+
+  const fallback = attempts[1];
+  const mergedMem = trimToMaxOldestFirst([...sortedBase, fallback].sort(compareVisitsByObservationThenAt));
+  memorySessionByPatient[patientName] = mergedMem;
+  return { record: fallback, savedToLocalStorage: false };
 }
 
 export function listPatientDirectory(): PatientDirectoryRow[] {

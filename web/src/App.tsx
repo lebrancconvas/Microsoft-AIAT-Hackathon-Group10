@@ -176,6 +176,9 @@ function App() {
   const [result, setResult] = useState<PredictResult | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [progressionStorageNotice, setProgressionStorageNotice] = useState<string | null>(null);
+  /** ผู้ป่วยที่ใช้ตอนเริ่มวิเคราะห์ครั้งนี้ — ให้ตรงกับคีย์ที่บันทึกใน progression แม้เปลี่ยนชื่อระหว่างรอ API */
+  const [progressionPatientKeyForSession, setProgressionPatientKeyForSession] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'overlay' | 'original'>('overlay');
   const [patientName, setPatientName] = useState('');
   const [sessionSummaryLines, setSessionSummaryLines] = useState<string[] | null>(null);
@@ -199,9 +202,13 @@ function App() {
   }, []);
 
   const runPredict = useCallback(async (file: File) => {
+    const patientKeyForRun = normalizePatientName(patientName);
+
     setIsLoading(true);
     setResult(null);
     setErrorMessage(null);
+    setProgressionStorageNotice(null);
+    setProgressionPatientKeyForSession(null);
     setActiveTab('overlay');
     setSessionSummaryLines(null);
 
@@ -230,9 +237,8 @@ function App() {
         symptoms_checked: symptomsForDisplay,
         observation_date: timelineDate,
       };
-      const resolvedName = normalizePatientName(patientName);
-      const previous = getLastVisit(resolvedName);
-      appendVisit(resolvedName, {
+      const previous = getLastVisit(patientKeyForRun);
+      const appendOutcome = appendVisit(patientKeyForRun, {
         observation_date: timelineDate,
         timeline_day: enrichedResult.timeline_day,
         wound_area_pixels: enrichedResult.wound_area_pixels,
@@ -243,8 +249,14 @@ function App() {
         original_image_data_url: originalDataUrl,
         overlay_image_data_url: `data:image/png;base64,${data.overlay_base64}`,
       });
+      if (!appendOutcome.savedToLocalStorage) {
+        setProgressionStorageNotice(
+          'บันทึกลงที่จัดเก็บของเบราว์เซอร์ไม่ได้ — แสดงประวัติในแท็บนี้ชั่วคราวเท่านั้น (รีเฟรชแล้วหาย) ลองเคลียร์ข้อมูลไซต์หรือปิดโหมดส่วนตัว / ย่อขนาดภาพ'
+        );
+      }
       setSessionSummaryLines(buildClinicalSummaryLines(enrichedResult, previous));
-      lastAssessmentPatientRef.current = resolvedName;
+      lastAssessmentPatientRef.current = patientKeyForRun;
+      setProgressionPatientKeyForSession(patientKeyForRun);
       setResult(enrichedResult);
     } catch (err) {
       console.error('API Error:', err);
@@ -282,7 +294,9 @@ function App() {
   }, []);
 
   const chartPatientKey = normalizePatientName(patientName);
-  const progressionHistory = getVisitHistory(chartPatientKey);
+  const progressionHistoryLookupKey =
+    result != null && progressionPatientKeyForSession != null ? progressionPatientKeyForSession : chartPatientKey;
+  const progressionHistory = getVisitHistory(progressionHistoryLookupKey);
   const patientDirectory = listPatientDirectory();
 
   const btnBase: CSSProperties = {
@@ -667,11 +681,6 @@ function App() {
                   label="วันที่สังเกตการณ์"
                   value={result.observation_date ? formatObservationDateThai(result.observation_date) : '-'}
                   valueColor={theme.color.text}
-                  footer={
-                    <span style={{ fontSize: '13px', fontWeight: 700, color: theme.color.textSoft }}>
-                      ดัชนีติดตาม (ส่ง API): วันที่ {result.timeline_day}
-                    </span>
-                  }
                 />
               </div>
 
@@ -679,12 +688,31 @@ function App() {
                 <MetricTile label="สัดส่วนแผลต่อภาพ" value={`${result.wound_ratio_percent}%`} valueColor={theme.color.danger} />
               </div>
 
+              {progressionStorageNotice ? (
+                <div
+                  style={{
+                    marginTop: '14px',
+                    padding: '12px 14px',
+                    borderRadius: theme.radius.sm,
+                    border: `1px solid ${theme.color.warningBorder}`,
+                    backgroundColor: theme.color.warningBg,
+                    color: theme.color.warningText,
+                    fontSize: '13px',
+                    fontWeight: 600,
+                    lineHeight: 1.45,
+                  }}
+                  role="status"
+                >
+                  {progressionStorageNotice}
+                </div>
+              ) : null}
+
               <div style={{ marginTop: '22px' }}>
                 <VisitInsightsSection
                   summaryLines={sessionSummaryLines}
                   directory={patientDirectory}
                   chartHistory={progressionHistory}
-                  chartPatientLabel={chartPatientKey}
+                  chartPatientLabel={progressionHistoryLookupKey}
                   activePatientName={chartPatientKey}
                   onSelectPatient={handleSelectPatientFromDirectory}
                 />

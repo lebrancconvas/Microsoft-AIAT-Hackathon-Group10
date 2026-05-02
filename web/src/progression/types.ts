@@ -1,7 +1,7 @@
 /** Single saved assessment after /predict (client-side history). */
 export type VisitRecord = {
   id: string;
-  /** ISO instant for sorting; combines assigned observation **calendar date** with upload clock time. */
+  /** เวลาที่อัปโหลด/บันทึกเข้าระบบจริง (ISO) — แยกจากวันที่สังเกตการณ์ */
   at: string;
   /** `YYYY-MM-DD` — date assigned as day of observation (สังเกตการณ์). Missing on older saved visits. */
   observationDate?: string;

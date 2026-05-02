@@ -77,8 +77,11 @@ function formatObservationLongThai(ymd: string): string {
   return new Date(y, m - 1, d).toLocaleDateString('th-TH', { dateStyle: 'long' });
 }
 
+function formatUploadDateTimeThai(atIso: string): string {
+  return new Date(atIso).toLocaleString('th-TH', { dateStyle: 'medium', timeStyle: 'short' });
+}
+
 function VisitHistoryItem({ visit }: { visit: VisitRecord }) {
-  const uploadClock = new Date(visit.at).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', hour12: false });
   return (
     <div
       style={{
@@ -94,7 +97,7 @@ function VisitHistoryItem({ visit }: { visit: VisitRecord }) {
           {visit.observationDate ? formatObservationLongThai(visit.observationDate) : new Date(visit.at).toLocaleDateString('th-TH', { dateStyle: 'long' })}
         </p>
         <p style={{ margin: '4px 0 0 0', fontSize: '11px', color: theme.color.textMuted, fontWeight: 600 }}>
-          เวลาอัปโหลด: {uploadClock}
+          วันที่และเวลาที่อัปโหลด: {formatUploadDateTimeThai(visit.at)}
         </p>
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '8px' }}>
@@ -113,7 +116,6 @@ function VisitHistoryItem({ visit }: { visit: VisitRecord }) {
         <span>พื้นที่: {visit.woundAreaPixels.toLocaleString()}</span>
         <span>สัดส่วน: {visit.woundRatioPercent}%</span>
         <span>Risk: {visit.riskScore} ({visit.riskLevelTh})</span>
-        <span>ดัชนีติดตาม: วันที่ {visit.timelineDay}</span>
       </div>
       <p style={{ margin: '8px 0 0 0', fontSize: '12px', color: theme.color.text, fontWeight: 600, lineHeight: 1.45 }}>
         การบันทึกอาการ: {formatSymptomsForHistory(visit.symptomsChecked)}
@@ -122,29 +124,18 @@ function VisitHistoryItem({ visit }: { visit: VisitRecord }) {
   );
 }
 
-function formatToggleDateTime(atIso: string): { date: string; time: string } {
-  const dt = new Date(atIso);
-  return {
-    date: dt.toLocaleDateString('th-TH', { day: 'numeric', month: 'numeric', year: '2-digit' }),
-    time: dt.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', hour12: false }),
-  };
-}
-
-/** Chip top line = observation calendar date when known; bottom = upload time from `at`. */
-function chipLabelParts(visit: VisitRecord): { date: string; time: string } {
-  const upload = new Date(visit.at);
-  const time = upload.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', hour12: false });
+/** ชิปแสดงเฉพาะวันที่สังเกตการณ์ที่ผู้ใช้กำหนด (รูปแบบสั้น เช่น 1/5/69) */
+function chipObservationDateLabel(visit: VisitRecord): string {
   if (visit.observationDate) {
     const parts = visit.observationDate.split('-').map(Number);
     const y = parts[0];
     const m = parts[1];
     const d = parts[2];
     if (y && m && d) {
-      const dateStr = new Date(y, m - 1, d).toLocaleDateString('th-TH', { day: 'numeric', month: 'numeric', year: '2-digit' });
-      return { date: dateStr, time };
+      return new Date(y, m - 1, d).toLocaleDateString('th-TH', { day: 'numeric', month: 'numeric', year: '2-digit' });
     }
   }
-  return formatToggleDateTime(visit.at);
+  return new Date(visit.at).toLocaleDateString('th-TH', { day: 'numeric', month: 'numeric', year: '2-digit' });
 }
 
 export function VisitInsightsSection({
@@ -171,21 +162,22 @@ export function VisitInsightsSection({
     fontWeight: 800,
     letterSpacing: '-0.03em',
   };
-  const historyDesc = useMemo(() => [...chartHistory].reverse(), [chartHistory]);
+  /** `chartHistory` เรียงจากเก่าไปใหม่แล้ว (วันที่สังเกตการณ์ → เวลาอัปโหลด) */
+  const historyAsc = useMemo(() => [...chartHistory], [chartHistory]);
   const [selectedVisitId, setSelectedVisitId] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!historyDesc.length) {
+    if (!historyAsc.length) {
       setSelectedVisitId(null);
       return;
     }
-    const hasCurrent = selectedVisitId ? historyDesc.some((v) => v.id === selectedVisitId) : false;
+    const hasCurrent = selectedVisitId ? historyAsc.some((v) => v.id === selectedVisitId) : false;
     if (!hasCurrent) {
-      setSelectedVisitId(historyDesc[0].id);
+      setSelectedVisitId(historyAsc[historyAsc.length - 1].id);
     }
-  }, [historyDesc, selectedVisitId]);
+  }, [historyAsc, selectedVisitId]);
 
-  const selectedVisit = historyDesc.find((v) => v.id === selectedVisitId) ?? historyDesc[0] ?? null;
+  const selectedVisit = historyAsc.find((v) => v.id === selectedVisitId) ?? historyAsc[0] ?? null;
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
@@ -238,38 +230,38 @@ export function VisitInsightsSection({
 
       <Card style={{ padding: '18px 18px' }}>
         <h3 style={sectionTitleStyle}>ประวัติภาพและผลวิเคราะห์</h3>
-        <p style={{ margin: '0 0 12px 0', fontSize: '12px', color: theme.color.textMuted }}>
-          แตะวันที่สังเกตการณ์ (บรรทัดบน) / เวลาอัปโหลด (บรรทัดล่าง) เพื่อสลับดูประวัติ
+        <p style={{ margin: '0 0 12px 0', fontSize: '12px', color: theme.color.textMuted, lineHeight: 1.45 }}>
+          เรียงตามวันที่สังเกตการณ์จากเก่าไปใหม่ — แตะวันที่เพื่อดูรายละเอียด (หากวันที่ซ้ำ เรียงตามเวลาอัปโหลด)
         </p>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-          {historyDesc.length === 0 ? (
+          {historyAsc.length === 0 ? (
             <p style={{ margin: 0, fontSize: '13px', color: theme.color.textMuted }}>ยังไม่มีประวัติภาพของผู้ป่วยรายนี้</p>
           ) : (
             <>
               <div style={{ display: 'flex', gap: '8px', overflowX: 'auto', paddingBottom: '2px' }}>
-                {historyDesc.map((visit) => {
-                  const dt = chipLabelParts(visit);
+                {historyAsc.map((visit) => {
+                  const dateLabel = chipObservationDateLabel(visit);
                   const isActive = selectedVisit?.id === visit.id;
                   return (
                     <button
                       key={visit.id}
                       type="button"
+                      title={`อัปโหลด ${formatUploadDateTimeThai(visit.at)}`}
                       onClick={() => setSelectedVisitId(visit.id)}
                       style={{
                         border: `1px solid ${isActive ? theme.color.primary : theme.color.border}`,
                         backgroundColor: isActive ? 'rgba(14, 165, 233, 0.12)' : theme.color.surface,
                         color: theme.color.text,
                         borderRadius: '8px',
-                        minWidth: '84px',
-                        padding: '6px 8px',
+                        minWidth: '72px',
+                        padding: '8px 10px',
                         cursor: 'pointer',
                         fontFamily: theme.font,
                         boxShadow: isActive ? theme.shadow.sm : 'none',
                         flexShrink: 0,
                       }}
                     >
-                      <span style={{ display: 'block', fontSize: '12px', fontWeight: 700, lineHeight: 1.15 }}>{dt.date}</span>
-                      <span style={{ display: 'block', fontSize: '11px', color: theme.color.textMuted, marginTop: '2px' }}>{dt.time}</span>
+                      <span style={{ display: 'block', fontSize: '13px', fontWeight: 700, lineHeight: 1.2 }}>{dateLabel}</span>
                     </button>
                   );
                 })}
