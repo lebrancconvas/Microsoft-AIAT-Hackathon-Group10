@@ -1,4 +1,4 @@
-import type { CSSProperties, ReactNode } from 'react';
+import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from 'react';
 import type { PatientDirectoryRow, VisitRecord } from '../progression/types';
 import { theme } from '../theme';
 import { Card } from './uiPrimitives';
@@ -81,6 +81,14 @@ function VisitHistoryItem({ visit }: { visit: VisitRecord }) {
   );
 }
 
+function formatToggleDateTime(atIso: string): { date: string; time: string } {
+  const dt = new Date(atIso);
+  return {
+    date: dt.toLocaleDateString('th-TH', { day: 'numeric', month: 'numeric', year: '2-digit' }),
+    time: dt.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', hour12: false }),
+  };
+}
+
 export function VisitInsightsSection({
   summaryLines,
   directory,
@@ -105,6 +113,21 @@ export function VisitInsightsSection({
     fontWeight: 800,
     letterSpacing: '-0.03em',
   };
+  const historyDesc = useMemo(() => [...chartHistory].reverse(), [chartHistory]);
+  const [selectedVisitId, setSelectedVisitId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!historyDesc.length) {
+      setSelectedVisitId(null);
+      return;
+    }
+    const hasCurrent = selectedVisitId ? historyDesc.some((v) => v.id === selectedVisitId) : false;
+    if (!hasCurrent) {
+      setSelectedVisitId(historyDesc[0].id);
+    }
+  }, [historyDesc, selectedVisitId]);
+
+  const selectedVisit = historyDesc.find((v) => v.id === selectedVisitId) ?? historyDesc[0] ?? null;
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
@@ -158,13 +181,43 @@ export function VisitInsightsSection({
       <Card style={{ padding: '18px 18px' }}>
         <h3 style={sectionTitleStyle}>ประวัติภาพและผลวิเคราะห์</h3>
         <p style={{ margin: '0 0 12px 0', fontSize: '12px', color: theme.color.textMuted }}>
-          เรียงจากล่าสุดไปเก่าสุด สำหรับผู้ป่วยเดียวกัน
+          แตะวันที่/เวลาเพื่อสลับดูรายการย้อนหลังของผู้ป่วยรายนี้
         </p>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', maxHeight: '480px', overflowY: 'auto' }}>
-          {chartHistory.length === 0 ? (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+          {historyDesc.length === 0 ? (
             <p style={{ margin: 0, fontSize: '13px', color: theme.color.textMuted }}>ยังไม่มีประวัติภาพของผู้ป่วยรายนี้</p>
           ) : (
-            [...chartHistory].reverse().map((visit) => <VisitHistoryItem key={visit.id} visit={visit} />)
+            <>
+              <div style={{ display: 'flex', gap: '8px', overflowX: 'auto', paddingBottom: '2px' }}>
+                {historyDesc.map((visit) => {
+                  const dt = formatToggleDateTime(visit.at);
+                  const isActive = selectedVisit?.id === visit.id;
+                  return (
+                    <button
+                      key={visit.id}
+                      type="button"
+                      onClick={() => setSelectedVisitId(visit.id)}
+                      style={{
+                        border: `1px solid ${isActive ? theme.color.primary : theme.color.border}`,
+                        backgroundColor: isActive ? 'rgba(14, 165, 233, 0.12)' : theme.color.surface,
+                        color: theme.color.text,
+                        borderRadius: '8px',
+                        minWidth: '84px',
+                        padding: '6px 8px',
+                        cursor: 'pointer',
+                        fontFamily: theme.font,
+                        boxShadow: isActive ? theme.shadow.sm : 'none',
+                        flexShrink: 0,
+                      }}
+                    >
+                      <span style={{ display: 'block', fontSize: '12px', fontWeight: 700, lineHeight: 1.15 }}>{dt.date}</span>
+                      <span style={{ display: 'block', fontSize: '11px', color: theme.color.textMuted, marginTop: '2px' }}>{dt.time}</span>
+                    </button>
+                  );
+                })}
+              </div>
+              {selectedVisit ? <VisitHistoryItem visit={selectedVisit} /> : null}
+            </>
           )}
         </div>
       </Card>
