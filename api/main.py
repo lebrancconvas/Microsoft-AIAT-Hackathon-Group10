@@ -1,4 +1,4 @@
-from fastapi import FastAPI, UploadFile, File
+from fastapi import FastAPI, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 import torch
 import torchvision.transforms as transforms
@@ -44,8 +44,39 @@ def image_to_base64(img_array):
     _, buffer = cv2.imencode('.png', img_array)
     return base64.b64encode(buffer).decode('utf-8')
 
+SYMPTOM_WEIGHT = {
+    "pain": 8,
+    "swelling": 12,
+    "redness": 8,
+    "odor": 15,
+    "fever": 20,
+}
+
+ALLOWED_SYMPTOMS = frozenset(SYMPTOM_WEIGHT.keys())
+
+
+def compute_risk_score(wound_ratio_percent: float, timeline_day: int, symptom_keys: list[str]) -> tuple[int, str]:
+    """คำนวณคะแนนความเสี่ยง (0–100) และระดับเป็นภาษาไทยจากพื้นที่แผล อาการ และ timeline"""
+    base = min(55.0, float(wound_ratio_percent) * 4.0)
+    symptom_extra = sum(SYMPTOM_WEIGHT[k] for k in symptom_keys if k in SYMPTOM_WEIGHT)
+    td = max(1, min(int(timeline_day), 365))
+    timeline_extra = min(12.0, max(0, td - 1) * 0.75)
+    score = int(min(100, round(base + symptom_extra + timeline_extra)))
+    if score < 35:
+        level_th = "ต่ำ"
+    elif score < 65:
+        level_th = "ปานกลาง"
+    else:
+        level_th = "สูง"
+    return score, level_th
+
+
 @app.post("/predict")
-async def predict(file: UploadFile = File(...)):
+async def predict(
+    file: UploadFile = File(...),
+    timeline_day: int = Form(1),
+    symptoms: str = Form(""),
+):
     image_bytes = await file.read()
     image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
     
@@ -83,10 +114,20 @@ async def predict(file: UploadFile = File(...)):
     wound_pixels = int(np.sum(mask_bool))
     total_pixels = 384 * 512
     wound_ratio = (wound_pixels / total_pixels) * 100
-    
+
+    td = max(1, min(int(timeline_day), 365))
+    raw_keys = [s.strip().lower() for s in symptoms.split(",") if s.strip()]
+    symptom_keys = list(dict.fromkeys(k for k in raw_keys if k in ALLOWED_SYMPTOMS))
+
+    risk_score, risk_level_th = compute_risk_score(wound_ratio, td, symptom_keys)
+
     return {
         "wound_area_pixels": wound_pixels,
         "wound_ratio_percent": round(wound_ratio, 2),
+        "risk_score": risk_score,
+        "risk_level_th": risk_level_th,
+        "timeline_day": td,
+        "symptoms_checked": symptom_keys,
         "mask_base64": image_to_base64(prediction_mask_cv),
-        "overlay_base64": image_to_base64(overlay_cv)
+        "overlay_base64": image_to_base64(overlay_cv),
     }
