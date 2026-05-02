@@ -1,203 +1,102 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import React, { useState } from 'react';
 import axios from 'axios';
-import './App.css'
-
-type Prediction = {
-  label: string
-  confidence: number
-}
-
-const ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/webp']
-// const MOCK_LABELS = ['Cat', 'Dog', 'Car', 'Flower', 'Building', 'Food']
-
-// function getConfidenceSeed(text: string): number {
-//   return text.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0)
-// }
-
-// function createMockPredictions(fileName: string): Prediction[] {
-//   const seed = getConfidenceSeed(fileName) || 1
-//   const firstIndex = seed % MOCK_LABELS.length
-//   const secondIndex = (firstIndex + 2) % MOCK_LABELS.length
-//   const thirdIndex = (firstIndex + 4) % MOCK_LABELS.length
-
-//   const top = 0.75 + (seed % 15) / 100
-//   const second = top - 0.17
-//   const third = second - 0.14
-
-//   return [
-//     { label: MOCK_LABELS[firstIndex], confidence: top },
-//     { label: MOCK_LABELS[secondIndex], confidence: second },
-//     { label: MOCK_LABELS[thirdIndex], confidence: third },
-//   ]
-// }
 
 function App() {
-  const [selectedFile, setSelectedFile] = useState<File | null>(null)
-  const [isDragging, setIsDragging] = useState(false)
-  const [isLoading, setIsLoading] = useState(false)
-  const [errorMessage, setErrorMessage] = useState('')
-  const [predictions, setPredictions] = useState<Prediction[]>([])
-  const fileInputRef = useRef<HTMLInputElement>(null)
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [originalImagePreview, setOriginalImagePreview] = useState<string | null>(null);
+  const [result, setResult] = useState<any>(null);
+  const [isLoading, setIsLoading] = useState<boolean>(false);
 
-  const previewUrl = useMemo(
-    () => (selectedFile ? URL.createObjectURL(selectedFile) : ''),
-    [selectedFile]
-  )
-
-  useEffect(
-    () => () => {
-      if (previewUrl) URL.revokeObjectURL(previewUrl)
-    },
-    [previewUrl]
-  )
-
-  const resetResult = () => {
-    setPredictions([])
-    setErrorMessage('')
-  }
-
-  const validateImage = (file: File) => {
-    if (!ALLOWED_TYPES.includes(file.type)) {
-      setErrorMessage('Please upload JPG, PNG, or WEBP image format.')
-      return false
+  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    if (event.target.files && event.target.files[0]) {
+      const file = event.target.files[0];
+      setSelectedFile(file);
+      setOriginalImagePreview(URL.createObjectURL(file));
+      setResult(null); // เคลียร์ผลลัพธ์เก่าเมื่อเลือกรูปใหม่
     }
-    setErrorMessage('')
-    return true
-  }
+  };
 
-  const onSelectFile = (file: File | null) => {
-    if (!file) return
-    if (!validateImage(file)) return
-    setSelectedFile(file)
-    resetResult()
-  }
+  const handleUpload = async () => {
+    if (!selectedFile) return;
 
-  const onPredict = async () => {
-    if (!selectedFile) {
-      setErrorMessage('Please choose an image before predicting.')
-      return
-    }
-
-    setIsLoading(true)
-    setPredictions([])
-    setErrorMessage('')
-
-    // await new Promise((resolve) => setTimeout(resolve, 1600))
-    // setPredictions(createMockPredictions(selectedFile.name))
+    setIsLoading(true);
+    const formData = new FormData();
+    formData.append('file', selectedFile);
 
     try {
-      const formData = new FormData();
-      formData.append("file", selectedFile); 
-
-      const response = await axios.post("http://localhost:8000/api/predict", formData);
-
-      if (!response) {
-        throw new Error(`Server responded with status: ${response.status}`)
-      }
-
-      const data = await response.data;
-      if(data && data.prediction) {
-        setPredictions(data.prediction);
-      } else {
-        setErrorMessage("Cannot get prediction data.");
-      }
-
-    } catch(err) {
-      console.error(`Prediction Error: ${err}`);
-      setErrorMessage("Cannot Predict.");
+      // ยิง API ไปที่ FastAPI Backend
+      const response = await axios.post('http://localhost:8000/predict', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+      setResult(response.data);
+    } catch (error) {
+      console.error('Error uploading image:', error);
+      alert('เกิดข้อผิดพลาดในการประมวลผล');
     } finally {
-      setIsLoading(false)
+      setIsLoading(false);
     }
-  }
+  };
 
   return (
-    <main className="page">
-      <section className="card">
-        <h1>Image Classification</h1>
-        <p className="subtext">
-          Upload an image or drag and drop it below, then run prediction.
-        </p>
-
-        <div
-          className={`dropzone ${isDragging ? 'dragging' : ''}`}
-          onDragOver={(event) => {
-            event.preventDefault()
-            setIsDragging(true)
-          }}
-          onDragLeave={() => setIsDragging(false)}
-          onDrop={(event) => {
-            event.preventDefault()
-            setIsDragging(false)
-            const file = event.dataTransfer.files?.[0] ?? null
-            onSelectFile(file)
-          }}
-          onClick={() => fileInputRef.current?.click()}
+    <div style={{ fontFamily: 'sans-serif', padding: '20px', maxWidth: '1200px', margin: '0 auto' }}>
+      <h1>🩺 ระบบประเมินและวิเคราะห์บาดแผล (Wound Segmentation)</h1>
+      
+      <div style={{ marginBottom: '20px' }}>
+        <input type="file" accept="image/*" onChange={handleFileChange} />
+        <button 
+          onClick={handleUpload} 
+          disabled={!selectedFile || isLoading}
+          style={{ marginLeft: '10px', padding: '5px 15px', cursor: isLoading ? 'wait' : 'pointer' }}
         >
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept="image/jpeg,image/png,image/webp"
-            onChange={(event) => onSelectFile(event.target.files?.[0] ?? null)}
-          />
-
-          {!selectedFile ? (
-            <div className="placeholder">
-              <strong>Drop image here</strong>
-              <span>or click to browse image file</span>
-            </div>
-          ) : (
-            <div className="preview">
-              <img src={previewUrl} alt="Selected preview" />
-              <div>
-                <strong>{selectedFile.name}</strong>
-                <p>{(selectedFile.size / 1024).toFixed(1)} KB</p>
-              </div>
-            </div>
-          )}
-        </div>
-
-        {errorMessage && <p className="error">{errorMessage}</p>}
-
-        <button
-          className="predictButton"
-          type="button"
-          onClick={onPredict}
-          disabled={isLoading}
-        >
-          {isLoading ? 'Predicting...' : 'Predict'}
+          {isLoading ? 'กำลังวิเคราะห์...' : 'วิเคราะห์ภาพ'}
         </button>
+      </div>
 
-        {isLoading && (
-          <div className="loadingBox">
-            <div className="spinner" />
-            <p>Analyzing image and preparing prediction...</p>
+      {result && (
+        <>
+          <h3>ผลลัพธ์การประเมิน (Evaluation Results)</h3>
+          <div style={{ display: 'flex', gap: '20px', marginBottom: '30px' }}>
+            {/* คอลัมน์ที่ 1: ภาพต้นฉบับ */}
+            <div style={{ flex: 1 }}>
+              <p>Original Image</p>
+              <img src={originalImagePreview!} alt="Original" style={{ width: '100%', borderRadius: '8px' }} />
+            </div>
+            
+            {/* คอลัมน์ที่ 2: ภาพ Mask */}
+            <div style={{ flex: 1 }}>
+              <p>Prediction Mask</p>
+              <img src={`data:image/png;base64,${result.mask_base64}`} alt="Mask" style={{ width: '100%', borderRadius: '8px' }} />
+            </div>
+
+            {/* คอลัมน์ที่ 3: ภาพ Overlay */}
+            <div style={{ flex: 1 }}>
+              <p>Overlay (Wound Area)</p>
+              <img src={`data:image/png;base64,${result.overlay_base64}`} alt="Overlay" style={{ width: '100%', borderRadius: '8px' }} />
+            </div>
           </div>
-        )}
 
-        {predictions.length > 0 && (
-          <section className="resultBox">
-            <h2>Prediction Result</h2>
-            <ul>
-              {predictions.map((item) => (
-                <li key={item.label}>
-                  <div className="resultRow">
-                    <span>{item.label}</span>
-                    <span>{(item.confidence * 100).toFixed(1)}%</span>
-                  </div>
-                  <div className="barTrack">
-                    <div
-                      className="barFill"
-                      style={{ width: `${(item.confidence * 100).toFixed(1)}%` }}
-                    />
-                  </div>
-                </li>
-              ))}
-            </ul>
-          </section>
-        )}
-      </section>
-    </main>
-  )
+          {/* ตารางข้อมูล */}
+          <h3>ข้อมูลผู้ป่วย/ผลวิเคราะห์</h3>
+          <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
+            <thead>
+              <tr style={{ borderBottom: '2px solid #ccc' }}>
+                <th style={{ padding: '10px' }}>Wound Area (Pixels)</th>
+                <th style={{ padding: '10px' }}>Risk Score</th>
+                <th style={{ padding: '10px' }}>Timeline</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td style={{ padding: '10px' }}>{result.wound_area_pixels.toLocaleString()}</td>
+                <td style={{ padding: '10px' }}>{result.wound_area_pixels > 10000 ? 'High' : 'Medium'}</td>
+                <td style={{ padding: '10px' }}>Day 3</td>
+              </tr>
+            </tbody>
+          </table>
+        </>
+      )}
+    </div>
+  );
 }
 
-export default App
+export default App;  
