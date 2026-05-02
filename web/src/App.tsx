@@ -5,12 +5,32 @@ import axios from 'axios';
 
 const API_URL = "/predict";
 
+const SYMPTOM_OPTIONS = [
+  { key: 'pain', label: 'เจ็บ/ปวดบริเวณแผล' },
+  { key: 'swelling', label: 'บวม / อักเสบ' },
+  { key: 'redness', label: 'แดงรอบแผล' },
+  { key: 'odor', label: 'มีกลิ่น' },
+  { key: 'fever', label: 'มีไข้ / อาการทั่วไป' },
+] as const;
+
+type SymptomKey = (typeof SYMPTOM_OPTIONS)[number]['key'];
+
 type PredictResult = {
   wound_area_pixels: number;
   wound_ratio_percent: number;
+  risk_score: number;
+  risk_level_th: string;
+  timeline_day: number;
+  symptoms_checked: string[];
   mask_base64: string;
   overlay_base64: string;
 };
+
+function formatSymptomLine(keys: string[]): string {
+  const labelByKey = Object.fromEntries(SYMPTOM_OPTIONS.map((o) => [o.key, o.label])) as Record<string, string>;
+  if (!keys.length) return 'ไม่มีอาการที่เลือก';
+  return keys.map((k) => labelByKey[k] ?? k).join(' · ');
+}
 
 function App() {
   const [originalImagePreview, setOriginalImagePreview] = useState<string | null>(null);
@@ -18,6 +38,14 @@ function App() {
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'overlay' | 'original'>('overlay');
+  const [timelineDay, setTimelineDay] = useState<number>(1);
+  const [symptoms, setSymptoms] = useState<Record<SymptomKey, boolean>>({
+    pain: false,
+    swelling: false,
+    redness: false,
+    odor: false,
+    fever: false,
+  });
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
@@ -32,8 +60,13 @@ function App() {
     setErrorMessage(null);
     setActiveTab('overlay');
 
+    const checkedKeys = SYMPTOM_OPTIONS.filter((o) => symptoms[o.key]).map((o) => o.key);
+    const td = Math.min(365, Math.max(1, Math.floor(timelineDay) || 1));
+
     const formData = new FormData();
     formData.append('file', file);
+    formData.append('timeline_day', String(td));
+    formData.append('symptoms', checkedKeys.join(','));
 
     try {
       const { data } = await axios.post<PredictResult>(API_URL, formData, {
@@ -46,7 +79,7 @@ function App() {
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [symptoms, timelineDay]);
 
   const handleNewImage = useCallback(
     (file: File | undefined | null) => {
@@ -77,6 +110,38 @@ function App() {
 
       <main style={{ padding: '20px', maxWidth: '600px', margin: '0 auto', width: '100%', boxSizing: 'border-box', flex: 1 }}>
         
+        {/* Timeline + symptom check-in (ส่งประกอบการประเมินพร้อมภาพ) */}
+        <div style={{ backgroundColor: '#ffffff', borderRadius: '16px', border: '1px solid #e2e8f0', padding: '16px', marginBottom: '16px' }}>
+          <p style={{ margin: '0 0 12px 0', fontSize: '14px', fontWeight: '600', color: '#0f172a' }}>ข้อมูลประกอบก่อนวิเคราะห์ภาพ</p>
+          <label style={{ display: 'block', marginBottom: '12px' }}>
+            <span style={{ display: 'block', marginBottom: '6px', fontSize: '13px', color: '#64748b', fontWeight: '500' }}>Timeline — วันที่ติดตาม (วัน)</span>
+            <input
+              type="number"
+              min={1}
+              max={365}
+              value={timelineDay}
+              onChange={(e) => setTimelineDay(Number(e.target.value))}
+              disabled={isLoading}
+              style={{ width: '100%', boxSizing: 'border-box', padding: '10px 12px', borderRadius: '10px', border: '1px solid #cbd5e1', fontSize: '15px', color: '#0f172a' }}
+            />
+          </label>
+          <p style={{ margin: '0 0 8px 0', fontSize: '13px', color: '#64748b', fontWeight: '500' }}>การบันทึกอาการ (Symptom check-in)</p>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            {SYMPTOM_OPTIONS.map((o) => (
+              <label key={o.key} style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', fontSize: '14px', color: '#334155' }}>
+                <input
+                  type="checkbox"
+                  checked={symptoms[o.key]}
+                  disabled={isLoading}
+                  onChange={(e) => setSymptoms((prev) => ({ ...prev, [o.key]: e.target.checked }))}
+                  style={{ width: '18px', height: '18px', accentColor: '#0ea5e9' }}
+                />
+                <span>{o.label}</span>
+              </label>
+            ))}
+          </div>
+        </div>
+
         {/* Action Buttons */}
         <div style={{ display: 'flex', gap: '12px', marginBottom: '24px' }}>
           <button 
@@ -142,20 +207,26 @@ function App() {
             <div style={{ padding: '24px' }}>
               <h2 style={{ margin: '0 0 16px 0', fontSize: '18px', color: '#0f172a' }}>ผลการวิเคราะห์</h2>
               
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '16px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
                 <div style={{ backgroundColor: '#f8fafc', padding: '16px', borderRadius: '12px', border: '1px solid #f1f5f9' }}>
                   <p style={{ margin: '0 0 4px 0', color: '#64748b', fontSize: '13px', fontWeight: '500' }}>พื้นที่บาดแผล (พิกเซล)</p>
                   <p style={{ margin: 0, fontSize: '24px', fontWeight: '700', color: '#0ea5e9' }}>{result.wound_area_pixels.toLocaleString()}</p>
                 </div>
 
                 <div style={{ backgroundColor: '#f8fafc', padding: '16px', borderRadius: '12px', border: '1px solid #f1f5f9' }}>
-                  <p style={{ margin: '0 0 4px 0', color: '#64748b', fontSize: '13px', fontWeight: '500' }}>ระดับความเสี่ยง (ตัวอย่าง)</p>
-                  <p style={{ margin: 0, fontSize: '24px', fontWeight: '700', color: '#0f172a' }}>ปานกลาง</p>
+                  <p style={{ margin: '0 0 4px 0', color: '#64748b', fontSize: '13px', fontWeight: '500' }}>คะแนนความเสี่ยง (Risk score)</p>
+                  <p style={{ margin: 0, fontSize: '24px', fontWeight: '700', color: '#f43f5e' }}>{result.risk_score}</p>
+                  <p style={{ margin: '6px 0 0 0', fontSize: '13px', fontWeight: '600', color: '#475569' }}>ระดับ: {result.risk_level_th}</p>
                 </div>
 
                 <div style={{ backgroundColor: '#f8fafc', padding: '16px', borderRadius: '12px', border: '1px solid #f1f5f9' }}>
-                  <p style={{ margin: '0 0 4px 0', color: '#64748b', fontSize: '13px', fontWeight: '500' }}>Timeline (ตัวอย่าง)</p>
-                  <p style={{ margin: 0, fontSize: '24px', fontWeight: '700', color: '#0f172a' }}>วันที่ 3</p>
+                  <p style={{ margin: '0 0 4px 0', color: '#64748b', fontSize: '13px', fontWeight: '500' }}>การบันทึกอาการ (Symptom check-in)</p>
+                  <p style={{ margin: 0, fontSize: '14px', fontWeight: '600', color: '#0f172a', lineHeight: 1.45 }}>{formatSymptomLine(result.symptoms_checked)}</p>
+                </div>
+
+                <div style={{ backgroundColor: '#f8fafc', padding: '16px', borderRadius: '12px', border: '1px solid #f1f5f9' }}>
+                  <p style={{ margin: '0 0 4px 0', color: '#64748b', fontSize: '13px', fontWeight: '500' }}>Timeline</p>
+                  <p style={{ margin: 0, fontSize: '24px', fontWeight: '700', color: '#0f172a' }}>วันที่ {result.timeline_day}</p>
                 </div>
               </div>
 
