@@ -1,23 +1,26 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useRef, useState } from 'react';
 import axios from 'axios';
-import './App.css';
 
-const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:8000/predict';
+// const API_URL = import.meta.env.VITE_API_URL ?? 'https://awry-morality-garnet.ngrok-free.dev/predict';
+
+const API_URL = "/predict";
 
 type PredictResult = {
   wound_area_pixels: number;
+  wound_ratio_percent: number;
   mask_base64: string;
   overlay_base64: string;
 };
 
 function App() {
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [originalImagePreview, setOriginalImagePreview] = useState<string | null>(null);
   const [result, setResult] = useState<PredictResult | null>(null);
   const [isLoading, setIsLoading] = useState(false);
-  const [isDragging, setIsDragging] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<'overlay' | 'original'>('overlay');
+
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const cameraInputRef = useRef<HTMLInputElement>(null);
 
   const revokePreview = useCallback((url: string | null) => {
     if (url) URL.revokeObjectURL(url);
@@ -27,6 +30,7 @@ function App() {
     setIsLoading(true);
     setResult(null);
     setErrorMessage(null);
+    setActiveTab('overlay');
 
     const formData = new FormData();
     formData.append('file', file);
@@ -37,8 +41,8 @@ function App() {
       });
       setResult(data);
     } catch (err) {
-      console.error('Error uploading image:', err);
-      setErrorMessage('ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์หรือประมวลผลภาพได้ กรุณาลองอีกครั้ง');
+      console.error('API Error:', err);
+      setErrorMessage('ไม่สามารถวิเคราะห์ภาพได้ กรุณาตรวจสอบการเชื่อมต่อเซิร์ฟเวอร์');
     } finally {
       setIsLoading(false);
     }
@@ -46,169 +50,132 @@ function App() {
 
   const handleNewImage = useCallback(
     (file: File | undefined | null) => {
-      if (!file || !file.type.startsWith('image/')) {
-        setErrorMessage('กรุณาเลือกไฟล์รูปภาพ (เช่น JPG, PNG)');
-        return;
-      }
+      if (!file || !file.type.startsWith('image/')) return;
 
       revokePreview(originalImagePreview);
       const url = URL.createObjectURL(file);
-      setSelectedFile(file);
       setOriginalImagePreview(url);
-      setResult(null);
-      setErrorMessage(null);
       void runPredict(file);
     },
     [originalImagePreview, revokePreview, runPredict]
   );
 
-  useEffect(() => {
-    return () => {
-      if (originalImagePreview) URL.revokeObjectURL(originalImagePreview);
-    };
-  }, [originalImagePreview]);
-
-  const onFileInputChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-    handleNewImage(event.target.files?.[0]);
-    event.target.value = '';
-  };
-
-  const onDrop = (event: React.DragEvent) => {
-    event.preventDefault();
-    setIsDragging(false);
-    handleNewImage(event.dataTransfer.files?.[0]);
-  };
-
   return (
-    <div className="app">
-      <div className="app__glow" aria-hidden />
-      <header className="app__header">
-        <p className="app__eyebrow">Microsoft × AIAT Hackathon · Group 10</p>
-        <h1 className="app__title">ระบบประเมินและวิเคราะห์บาดแผล</h1>
-        <p className="app__subtitle">
-          อัปโหลดหรือลากวางภาพบาดแผล — ระบบจะวิเคราะห์อัตโนมัติและแสดงผลการแบ่งกลุ่ม (segmentation)
-        </p>
+    <div style={{ fontFamily: 'Inter, system-ui, sans-serif', backgroundColor: '#f8fafc', minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
+      
+      <input ref={fileInputRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={(e) => { handleNewImage(e.target.files?.[0]); e.target.value = ''; }} />
+      <input ref={cameraInputRef} type="file" accept="image/*" capture="environment" style={{ display: 'none' }} onChange={(e) => { handleNewImage(e.target.files?.[0]); e.target.value = ''; }} />
+
+      {/* Header */}
+      <header style={{ backgroundColor: '#ffffff', padding: '20px', borderBottom: '1px solid #e2e8f0', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <div style={{ width: '32px', height: '32px', backgroundColor: '#0ea5e9', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: 'bold' }}>+</div>
+          <h1 style={{ margin: 0, fontSize: '24px', color: '#0f172a' }}>Microsoft x AIAT Hackathon (Group 10)</h1>
+        </div>
+        <p style={{ margin: '8px 0 0 0', color: '#64748b', fontSize: '14px' }}>ระบบติดตามแผลเบาหวานด้วยภาพ</p>  
       </header>
 
-      <section className="upload-card">
-        <div
-          className={`dropzone ${isDragging ? 'dropzone--active' : ''} ${isLoading ? 'dropzone--busy' : ''}`}
-          onDragOver={(e) => {
-            e.preventDefault();
-            setIsDragging(true);
-          }}
-          onDragLeave={() => setIsDragging(false)}
-          onDrop={onDrop}
-          onClick={() => !isLoading && fileInputRef.current?.click()}
-          role="button"
-          tabIndex={0}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' || e.key === ' ') {
-              e.preventDefault();
-              if (!isLoading) fileInputRef.current?.click();
-            }
-          }}
-        >
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept="image/*"
-            className="dropzone__input"
-            onChange={onFileInputChange}
-            disabled={isLoading}
-          />
-
-          <div className="dropzone__inner">
-            <span className="dropzone__icon" aria-hidden>
-              <svg width="40" height="40" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <path
-                  d="M12 16V4m0 0l-4 4m4-4l4 4M4 20h16"
-                  stroke="currentColor"
-                  strokeWidth="1.75"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-              </svg>
-            </span>
-            <p className="dropzone__title">
-              {isLoading ? 'กำลังวิเคราะห์ภาพ…' : 'ลากวางภาพที่นี่ หรือคลิกเพื่อเลือกไฟล์'}
-            </p>
-            <p className="dropzone__hint">รองรับ JPG, PNG, WEBP — ไม่ต้องกดปุ่มวิเคราะห์เพิ่ม</p>
-          </div>
-
-          {selectedFile && originalImagePreview && (
-            <div className="dropzone__thumb">
-              <img src={originalImagePreview} alt="" />
-            </div>
-          )}
+      <main style={{ padding: '20px', maxWidth: '600px', margin: '0 auto', width: '100%', boxSizing: 'border-box', flex: 1 }}>
+        
+        {/* Action Buttons */}
+        <div style={{ display: 'flex', gap: '12px', marginBottom: '24px' }}>
+          <button 
+            onClick={() => fileInputRef.current?.click()} disabled={isLoading}
+            style={{ flex: 1, padding: '14px', borderRadius: '12px', border: '1px solid #cbd5e1', backgroundColor: '#ffffff', color: '#334155', fontSize: '15px', fontWeight: '600', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
+          >
+            📂 อัปโหลดรูป
+          </button>
+          <button 
+            onClick={() => cameraInputRef.current?.click()} disabled={isLoading}
+            style={{ flex: 1, padding: '14px', borderRadius: '12px', border: 'none', backgroundColor: '#0ea5e9', color: '#ffffff', fontSize: '15px', fontWeight: '600', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', boxShadow: '0 4px 6px -1px rgba(14, 165, 233, 0.2)' }}
+          >
+            📷 ถ่ายภาพ
+          </button>
         </div>
 
-        {errorMessage && (
-          <p className="app__error" role="alert">
-            {errorMessage}
-          </p>
+        {/* Loading State */}
+        {isLoading && (
+          <div style={{ backgroundColor: '#ffffff', padding: '40px', borderRadius: '16px', textAlign: 'center', border: '1px solid #e2e8f0' }}>
+            <div style={{ width: '40px', height: '40px', border: '3px solid #e0f2fe', borderTop: '3px solid #0ea5e9', borderRadius: '50%', animation: 'spin 1s linear infinite', margin: '0 auto 16px auto' }} />
+            <p style={{ margin: 0, color: '#475569', fontWeight: '500' }}>กำลังให้ AI ประมวลผล...</p>
+            <style>{`@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }`}</style>
+          </div>
         )}
-      </section>
 
-      {isLoading && (
-        <div className="loading-strip" aria-live="polite">
-          <span className="loading-strip__spinner" />
-          <span>กำลังประมวลผลโมเดล U-Net และสร้างมาสก์…</span>
-        </div>
-      )}
-
-      {result && originalImagePreview && (
-        <section className="results">
-          <div className="results__head">
-            <h2>ผลลัพธ์การประเมิน</h2>
-            <span className="results__badge">
-              พื้นที่บาดแผลโดยประมาณ · {result.wound_area_pixels.toLocaleString()} พิกเซล
-            </span>
+        {/* Error Message */}
+        {errorMessage && (
+          <div style={{ backgroundColor: '#fef2f2', border: '1px solid #fca5a5', color: '#ef4444', padding: '16px', borderRadius: '12px', textAlign: 'center', marginBottom: '20px' }}>
+            {errorMessage}
           </div>
+        )}
 
-          <div className="results__grid">
-            <figure className="result-panel">
-              <figcaption>ภาพต้นฉบับ</figcaption>
-              <div className="result-panel__frame">
-                <img src={originalImagePreview} alt="ภาพต้นฉบับ" />
+        {/* Results Card */}
+        {result && originalImagePreview && !isLoading && (
+          <div style={{ backgroundColor: '#ffffff', borderRadius: '16px', overflow: 'hidden', border: '1px solid #e2e8f0', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.05)' }}>
+            
+            {/* Image Viewer with Tabs */}
+            <div style={{ position: 'relative', width: '100%', backgroundColor: '#0f172a', aspectRatio: '4/3' }}>
+              <img 
+                src={activeTab === 'overlay' ? `data:image/png;base64,${result.overlay_base64}` : originalImagePreview} 
+                alt="Wound Analysis" 
+                style={{ width: '100%', height: '100%', objectFit: 'contain' }} 
+              />
+              
+              {/* Floating Tab Controls inside image */}
+              <div style={{ position: 'absolute', bottom: '12px', left: '50%', transform: 'translateX(-50%)', backgroundColor: 'rgba(15, 23, 42, 0.7)', backdropFilter: 'blur(4px)', padding: '4px', borderRadius: '20px', display: 'flex', gap: '4px' }}>
+                <button 
+                  onClick={() => setActiveTab('original')}
+                  style={{ padding: '6px 16px', borderRadius: '16px', border: 'none', backgroundColor: activeTab === 'original' ? '#ffffff' : 'transparent', color: activeTab === 'original' ? '#0f172a' : '#ffffff', fontSize: '13px', fontWeight: '600', cursor: 'pointer', transition: 'all 0.2s' }}
+                >
+                  ภาพต้นฉบับ
+                </button>
+                <button 
+                  onClick={() => setActiveTab('overlay')}
+                  style={{ padding: '6px 16px', borderRadius: '16px', border: 'none', backgroundColor: activeTab === 'overlay' ? '#ffffff' : 'transparent', color: activeTab === 'overlay' ? '#0f172a' : '#ffffff', fontSize: '13px', fontWeight: '600', cursor: 'pointer', transition: 'all 0.2s' }}
+                >
+                  ภาพที่ถูกประมวลผล   
+                </button>
               </div>
-            </figure>
+            </div>
 
-            <figure className="result-panel">
-              <figcaption>มาสก์ที่ทำนาย (Prediction mask)</figcaption>
-              <div className="result-panel__frame">
-                <img src={`data:image/png;base64,${result.mask_base64}`} alt="มาสก์การแบ่งกลุ่ม" />
-              </div>
-            </figure>
+            {/* Metrics Dashboard */}
+            <div style={{ padding: '24px' }}>
+              <h2 style={{ margin: '0 0 16px 0', fontSize: '18px', color: '#0f172a' }}>ผลการวิเคราะห์</h2>
+              
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '16px' }}>
+                <div style={{ backgroundColor: '#f8fafc', padding: '16px', borderRadius: '12px', border: '1px solid #f1f5f9' }}>
+                  <p style={{ margin: '0 0 4px 0', color: '#64748b', fontSize: '13px', fontWeight: '500' }}>พื้นที่บาดแผล (พิกเซล)</p>
+                  <p style={{ margin: 0, fontSize: '24px', fontWeight: '700', color: '#0ea5e9' }}>{result.wound_area_pixels.toLocaleString()}</p>
+                </div>
 
-            <figure className="result-panel">
-              <figcaption>ซ้อนทับบนภาพ (Overlay)</figcaption>
-              <div className="result-panel__frame">
-                <img src={`data:image/png;base64,${result.overlay_base64}`} alt="ภาพซ้อนทับบริเวณบาดแผล" />
+                <div style={{ backgroundColor: '#f8fafc', padding: '16px', borderRadius: '12px', border: '1px solid #f1f5f9' }}>
+                  <p style={{ margin: '0 0 4px 0', color: '#64748b', fontSize: '13px', fontWeight: '500' }}>ระดับความเสี่ยง (ตัวอย่าง)</p>
+                  <p style={{ margin: 0, fontSize: '24px', fontWeight: '700', color: '#0f172a' }}>ปานกลาง</p>
+                </div>
+
+                <div style={{ backgroundColor: '#f8fafc', padding: '16px', borderRadius: '12px', border: '1px solid #f1f5f9' }}>
+                  <p style={{ margin: '0 0 4px 0', color: '#64748b', fontSize: '13px', fontWeight: '500' }}>Timeline (ตัวอย่าง)</p>
+                  <p style={{ margin: 0, fontSize: '24px', fontWeight: '700', color: '#0f172a' }}>วันที่ 3</p>
+                </div>
               </div>
-            </figure>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '16px', marginTop: '16px' }}>
+                <div style={{ backgroundColor: '#f8fafc', padding: '16px', borderRadius: '12px', border: '1px solid #f1f5f9' }}>
+                  <p style={{ margin: '0 0 4px 0', color: '#64748b', fontSize: '13px', fontWeight: '500' }}>สัดส่วนแผลต่อภาพ</p>
+                  <p style={{ margin: 0, fontSize: '24px', fontWeight: '700', color: '#f43f5e' }}>{result.wound_ratio_percent}%</p>
+                </div>
+              </div>
+
+              <div style={{ marginTop: '20px', padding: '12px', backgroundColor: '#fffbeb', borderRadius: '8px', borderLeft: '4px solid #f59e0b' }}>
+                <p style={{ margin: 0, fontSize: '12px', color: '#92400e', lineHeight: '1.5' }}>
+                  <strong>หมายเหตุ:</strong> ข้อมูลนี้วิเคราะห์โดยโมเดล U-Net (DFUC2022) เพื่อประกอบการตัดสินใจเบื้องต้น ไม่สามารถใช้ทดแทนการวินิจฉัยของแพทย์ได้
+                </p>
+              </div>
+            </div>
+
           </div>
-
-          <div className="metrics">
-            <table className="metrics__table">
-              <thead>
-                <tr>
-                  <th>พื้นที่บาดแผล (พิกเซล)</th>
-                  <th>ระดับความเสี่ยง (ตัวอย่าง)</th>
-                  <th>Timeline (ตัวอย่าง)</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr>
-                  <td>{result.wound_area_pixels.toLocaleString()}</td>
-                  <td>{result.wound_area_pixels > 10000 ? 'สูง' : 'ปานกลาง'}</td>
-                  <td>วันที่ 3</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        </section>
-      )}
+        )}
+      </main>
     </div>
   );
 }
