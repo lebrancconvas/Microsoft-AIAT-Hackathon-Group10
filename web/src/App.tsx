@@ -8,8 +8,8 @@ import { buildClinicalSummaryLines } from './progression/summary';
 import { theme } from './theme';
 
 // const API_URL = import.meta.env.VITE_API_URL ?? 'https://awry-morality-garnet.ngrok-free.dev/predict';
-
-const API_URL = '/predict';
+// const API_URL = '/predict';
+const API_URL = import.meta.env.VITE_API_URL ?? '/predict';
 
 const SYMPTOM_OPTIONS = [
   { key: 'pain', label: 'เจ็บ/ปวดบริเวณแผล' },
