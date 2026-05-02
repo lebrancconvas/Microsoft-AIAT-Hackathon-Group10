@@ -8,38 +8,47 @@ import cv2
 import io
 import base64
 from collections import OrderedDict
-from unet_model import UNet # คลาสโมเดลของคุณ
+
+# นำเข้า Class โมเดลจากไฟล์ของคุณ
+from unet_model import UNet
 
 app = FastAPI()
 
-# อนุญาตให้ Frontend (React) เรียกใช้งาน API ข้ามโดเมนได้ (CORS)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"], # ในโปรดักชันควรเปลี่ยนเป็น URL ของ Frontend
+    allow_origins=["*"], 
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# โหลดโมเดลตอนเริ่มเซิร์ฟเวอร์
+@app.get("/")
+async def root():
+    return {"message": "Hello World"}
+
+print("Loading model...")
 model = UNet(in_channels=3, out_channels=1, base_channels=32)
 checkpoint = torch.load("./best_unet_dfuc2022.pth", map_location=torch.device('cpu'))
-new_state_dict = OrderedDict({k.replace("module.", ""): v for k, v in checkpoint['model_state_dict'].items()})
+
+new_state_dict = OrderedDict()
+for k, v in checkpoint['model_state_dict'].items():
+    name = k.replace("module.", "")
+    new_state_dict[name] = v
+
 model.load_state_dict(new_state_dict)
 model.eval()
+print("Model loaded successfully!")
 
-# ฟังก์ชันแปลงภาพเป็น Base64 เพื่อส่งกลับให้ React
 def image_to_base64(img_array):
+    """แปลง numpy array เป็น Base64 string"""
     _, buffer = cv2.imencode('.png', img_array)
     return base64.b64encode(buffer).decode('utf-8')
 
 @app.post("/predict")
 async def predict(file: UploadFile = File(...)):
-    # 1. อ่านไฟล์ภาพ
     image_bytes = await file.read()
     image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
     
-    # 2. Pre-processing
     transform = transforms.Compose([
         transforms.Resize((384, 512)),
         transforms.ToTensor(),
@@ -47,30 +56,37 @@ async def predict(file: UploadFile = File(...)):
     ])
     input_tensor = transform(image).unsqueeze(0)
     
-    # 3. Inference
     with torch.no_grad():
         output = model(input_tensor)
         prob_mask = torch.sigmoid(output).squeeze().numpy()
         
-    # 4. สร้างรูปภาพผลลัพธ์
     mask_bool = prob_mask > 0.5
     prediction_mask_cv = (mask_bool * 255).astype(np.uint8)
     
-    # สร้าง Overlay
+    # --- ปรับปรุงการทำ Overlay สีแดงโปร่งแสง ---
     orig_cv = cv2.cvtColor(np.array(image.resize((512, 384))), cv2.COLOR_RGB2BGR)
-    overlay_color = np.zeros_like(orig_cv)
-    overlay_color[:, :, 2] = 255 # สีแดง (OpenCV ใช้ BGR)
-    mask_3d = np.repeat(mask_bool[:, :, np.newaxis], 3, axis=2)
-    overlay_cv = np.where(mask_3d, cv2.addWeighted(orig_cv, 0.7, overlay_color, 0.3, 0), orig_cv)
     
-    # 5. คำนวณพื้นที่
+    # สร้างแผ่นสีแดงล้วน
+    red_mask = np.zeros_like(orig_cv)
+    red_mask[:, :, 2] = 255 # ช่องสีแดงในระบบ BGR
+    
+    # นำสีแดงมาผสมกับภาพเดิมเฉพาะจุดที่เป็นแผล (Alpha = 0.5)
+    alpha = 0.5
+    mask_3d = np.stack([mask_bool]*3, axis=-1)
+    overlay_cv = np.where(mask_3d, cv2.addWeighted(orig_cv, 1-alpha, red_mask, alpha, 0), orig_cv)
+    
+    # เพิ่มขอบสีแดงเข้มให้ดูชัดเจนขึ้น
+    contours, _ = cv2.findContours(prediction_mask_cv, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    cv2.drawContours(overlay_cv, contours, -1, (0, 0, 200), 2)
+    
+    # คำนวณพื้นที่
     wound_pixels = int(np.sum(mask_bool))
+    total_pixels = 384 * 512
+    wound_ratio = (wound_pixels / total_pixels) * 100
     
-    # ส่งผลลัพธ์กลับเป็น JSON
     return {
         "wound_area_pixels": wound_pixels,
+        "wound_ratio_percent": round(wound_ratio, 2),
         "mask_base64": image_to_base64(prediction_mask_cv),
         "overlay_base64": image_to_base64(overlay_cv)
     }
-
-# วิธีรัน: uvicorn main:app --reload --port 8000
