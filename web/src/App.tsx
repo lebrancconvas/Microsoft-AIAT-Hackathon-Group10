@@ -16,6 +16,7 @@ const SYMPTOM_OPTIONS = [
   { key: 'redness', label: 'แดงรอบแผล' },
   { key: 'odor', label: 'มีกลิ่น' },
   { key: 'fever', label: 'มีไข้ / อาการทั่วไป' },
+  { key: 'other', label: 'อื่นๆ' },
 ] as const;
 
 type SymptomKey = (typeof SYMPTOM_OPTIONS)[number]['key'];
@@ -43,7 +44,26 @@ async function fileToDataUrl(file: File): Promise<string> {
 function formatSymptomLine(keys: string[]): string {
   const labelByKey = Object.fromEntries(SYMPTOM_OPTIONS.map((o) => [o.key, o.label])) as Record<string, string>;
   if (!keys.length) return 'ไม่มีอาการที่เลือก';
-  return keys.map((k) => labelByKey[k] ?? k).join(' · ');
+  return keys
+    .map((k) => {
+      if (k.startsWith('other:')) {
+        const text = k.slice('other:'.length).trim();
+        return text ? `อื่นๆ: ${text}` : 'อื่นๆ';
+      }
+      return labelByKey[k] ?? k;
+    })
+    .join(' · ');
+}
+
+function computeTimelineDayFromDate(selectedDate: string): number {
+  if (!selectedDate) return 1;
+  const now = new Date();
+  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const picked = new Date(`${selectedDate}T00:00:00`);
+  const diffMs = todayStart.getTime() - picked.getTime();
+  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+  const timelineDay = diffDays + 1;
+  return Math.min(365, Math.max(1, timelineDay));
 }
 
 /* ——— Presentational helpers (no business logic) ——— */
@@ -149,14 +169,16 @@ function App() {
   const [patientName, setPatientName] = useState('');
   const [sessionSummaryLines, setSessionSummaryLines] = useState<string[] | null>(null);
   const lastAssessmentPatientRef = useRef<string | null>(null);
-  const [timelineDay, setTimelineDay] = useState<number>(1);
+  const [timelineDate, setTimelineDate] = useState<string>(() => new Date().toISOString().slice(0, 10));
   const [symptoms, setSymptoms] = useState<Record<SymptomKey, boolean>>({
     pain: false,
     swelling: false,
     redness: false,
     odor: false,
     fever: false,
+    other: false,
   });
+  const [otherSymptomText, setOtherSymptomText] = useState('');
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
@@ -173,35 +195,43 @@ function App() {
     setSessionSummaryLines(null);
 
     const checkedKeys = SYMPTOM_OPTIONS.filter((o) => symptoms[o.key]).map((o) => o.key);
-    const td = Math.min(365, Math.max(1, Math.floor(timelineDay) || 1));
+    const customOther = otherSymptomText.trim();
+    const symptomPayload: string[] = [...checkedKeys];
+    if (symptoms.other && customOther) {
+      symptomPayload.push(`other:${customOther}`);
+    }
+    const td = computeTimelineDayFromDate(timelineDate);
 
     const formData = new FormData();
     formData.append('file', file);
     formData.append('timeline_day', String(td));
-    formData.append('symptoms', checkedKeys.join(','));
+    formData.append('symptoms', symptomPayload.join(','));
 
     try {
       const originalDataUrl = await fileToDataUrl(file);
       const { data } = await axios.post<PredictResult>(API_URL, formData, {
         headers: { 'Content-Type': 'multipart/form-data' },
       });
+      const symptomsForDisplay =
+        symptoms.other && customOther ? [...data.symptoms_checked, `other:${customOther}`] : data.symptoms_checked;
+      const enrichedResult: PredictResult = { ...data, symptoms_checked: symptomsForDisplay };
       const resolvedName = normalizePatientName(patientName);
       const previous = getLastVisit(resolvedName);
       appendVisit(resolvedName, {
-        ...data,
+        ...enrichedResult,
         original_image_data_url: originalDataUrl,
         overlay_image_data_url: `data:image/png;base64,${data.overlay_base64}`,
       });
-      setSessionSummaryLines(buildClinicalSummaryLines(data, previous));
+      setSessionSummaryLines(buildClinicalSummaryLines(enrichedResult, previous));
       lastAssessmentPatientRef.current = resolvedName;
-      setResult(data);
+      setResult(enrichedResult);
     } catch (err) {
       console.error('API Error:', err);
       setErrorMessage('ไม่สามารถวิเคราะห์ภาพได้ กรุณาตรวจสอบการเชื่อมต่อเซิร์ฟเวอร์');
     } finally {
       setIsLoading(false);
     }
-  }, [symptoms, timelineDay, patientName]);
+  }, [symptoms, otherSymptomText, timelineDate, patientName]);
 
   const handleNewImage = useCallback(
     (file: File | undefined | null) => {
@@ -346,17 +376,16 @@ function App() {
             />
           </label>
           <label style={{ display: 'block', marginBottom: '10px' }}>
-            <FieldLabel dense>วันที่ติดตาม (วัน)</FieldLabel>
+            <FieldLabel dense>วันที่ติดตาม</FieldLabel>
             <input
-              type="number"
-              min={1}
-              max={365}
-              value={timelineDay}
-              onChange={(e) => setTimelineDay(Number(e.target.value))}
+              type="date"
+              value={timelineDate}
+              onChange={(e) => setTimelineDate(e.target.value)}
+              max={new Date().toISOString().slice(0, 10)}
               disabled={isLoading}
               style={{
                 width: '100%',
-                maxWidth: '112px',
+                maxWidth: '180px',
                 padding: '8px 12px',
                 borderRadius: theme.radius.sm,
                 border: `1px solid ${theme.color.borderStrong}`,
@@ -368,7 +397,7 @@ function App() {
               }}
             />
           </label>
-          <FieldLabel dense>การบันทึกอาการ</FieldLabel>
+          <FieldLabel dense>การบันทึกอาการ (Symptom check-in)</FieldLabel>
           <div
             style={{
               display: 'grid',
@@ -377,16 +406,9 @@ function App() {
             }}
           >
             {SYMPTOM_OPTIONS.map((o) => (
-              <label
+              <div
                 key={o.key}
                 style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '8px',
-                  cursor: isLoading ? 'default' : 'pointer',
-                  fontSize: '12px',
-                  color: theme.color.text,
-                  fontWeight: 500,
                   padding: '7px 9px',
                   borderRadius: theme.radius.sm,
                   border: `1px solid ${symptoms[o.key] ? theme.color.primary : theme.color.border}`,
@@ -395,15 +417,47 @@ function App() {
                   minHeight: 0,
                 }}
               >
-                <input
-                  type="checkbox"
-                  checked={symptoms[o.key]}
-                  disabled={isLoading}
-                  onChange={(e) => setSymptoms((prev) => ({ ...prev, [o.key]: e.target.checked }))}
-                  style={{ width: '16px', height: '16px', accentColor: theme.color.primary, flexShrink: 0 }}
-                />
-                <span style={{ lineHeight: 1.25 }}>{o.label}</span>
-              </label>
+                <label
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    cursor: isLoading ? 'default' : 'pointer',
+                    fontSize: '12px',
+                    color: theme.color.text,
+                    fontWeight: 500,
+                  }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={symptoms[o.key]}
+                    disabled={isLoading}
+                    onChange={(e) => setSymptoms((prev) => ({ ...prev, [o.key]: e.target.checked }))}
+                    style={{ width: '16px', height: '16px', accentColor: theme.color.primary, flexShrink: 0 }}
+                  />
+                  <span style={{ lineHeight: 1.25 }}>{o.label}</span>
+                </label>
+                {o.key === 'other' && symptoms.other ? (
+                  <input
+                    type="text"
+                    value={otherSymptomText}
+                    onChange={(e) => setOtherSymptomText(e.target.value)}
+                    placeholder="ระบุอาการเพิ่มเติม"
+                    disabled={isLoading}
+                    style={{
+                      width: '100%',
+                      marginTop: '6px',
+                      padding: '6px 8px',
+                      borderRadius: '7px',
+                      border: `1px solid ${theme.color.borderStrong}`,
+                      fontSize: '12px',
+                      color: theme.color.text,
+                      fontFamily: theme.font,
+                      backgroundColor: theme.color.surface,
+                    }}
+                  />
+                ) : null}
+              </div>
             ))}
           </div>
         </Card>

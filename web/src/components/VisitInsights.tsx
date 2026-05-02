@@ -47,6 +47,27 @@ function DirectoryRow({
   );
 }
 
+function formatSymptomsForHistory(keys: string[]): string {
+  const labels: Record<string, string> = {
+    pain: 'เจ็บ/ปวดบริเวณแผล',
+    swelling: 'บวม / อักเสบ',
+    redness: 'แดงรอบแผล',
+    odor: 'มีกลิ่น',
+    fever: 'มีไข้ / อาการทั่วไป',
+    other: 'อื่นๆ',
+  };
+  if (!keys.length) return 'ไม่มีอาการที่เลือก';
+  return keys
+    .map((k) => {
+      if (k.startsWith('other:')) {
+        const text = k.slice('other:'.length).trim();
+        return text ? `อื่นๆ: ${text}` : 'อื่นๆ';
+      }
+      return labels[k] ?? k;
+    })
+    .join(' · ');
+}
+
 function VisitHistoryItem({ visit }: { visit: VisitRecord }) {
   const at = new Date(visit.at).toLocaleString('th-TH', { dateStyle: 'medium', timeStyle: 'short' });
   return (
@@ -77,6 +98,9 @@ function VisitHistoryItem({ visit }: { visit: VisitRecord }) {
         <span>Risk: {visit.riskScore} ({visit.riskLevelTh})</span>
         <span>Timeline: วันที่ {visit.timelineDay}</span>
       </div>
+      <p style={{ margin: '8px 0 0 0', fontSize: '12px', color: theme.color.text, fontWeight: 600, lineHeight: 1.45 }}>
+        การบันทึกอาการ: {formatSymptomsForHistory(visit.symptomsChecked)}
+      </p>
     </div>
   );
 }
