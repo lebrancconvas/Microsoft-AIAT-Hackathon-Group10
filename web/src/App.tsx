@@ -1,102 +1,216 @@
-import React, { useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import axios from 'axios';
+import './App.css';
+
+const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:8000/predict';
+
+type PredictResult = {
+  wound_area_pixels: number;
+  mask_base64: string;
+  overlay_base64: string;
+};
 
 function App() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [originalImagePreview, setOriginalImagePreview] = useState<string | null>(null);
-  const [result, setResult] = useState<any>(null);
-  const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [result, setResult] = useState<PredictResult | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-    if (event.target.files && event.target.files[0]) {
-      const file = event.target.files[0];
-      setSelectedFile(file);
-      setOriginalImagePreview(URL.createObjectURL(file));
-      setResult(null); // เคลียร์ผลลัพธ์เก่าเมื่อเลือกรูปใหม่
-    }
-  };
+  const revokePreview = useCallback((url: string | null) => {
+    if (url) URL.revokeObjectURL(url);
+  }, []);
 
-  const handleUpload = async () => {
-    if (!selectedFile) return;
-
+  const runPredict = useCallback(async (file: File) => {
     setIsLoading(true);
+    setResult(null);
+    setErrorMessage(null);
+
     const formData = new FormData();
-    formData.append('file', selectedFile);
+    formData.append('file', file);
 
     try {
-      // ยิง API ไปที่ FastAPI Backend
-      const response = await axios.post('http://localhost:8000/predict', formData, {
+      const { data } = await axios.post<PredictResult>(API_URL, formData, {
         headers: { 'Content-Type': 'multipart/form-data' },
       });
-      setResult(response.data);
-    } catch (error) {
-      console.error('Error uploading image:', error);
-      alert('เกิดข้อผิดพลาดในการประมวลผล');
+      setResult(data);
+    } catch (err) {
+      console.error('Error uploading image:', err);
+      setErrorMessage('ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์หรือประมวลผลภาพได้ กรุณาลองอีกครั้ง');
     } finally {
       setIsLoading(false);
     }
+  }, []);
+
+  const handleNewImage = useCallback(
+    (file: File | undefined | null) => {
+      if (!file || !file.type.startsWith('image/')) {
+        setErrorMessage('กรุณาเลือกไฟล์รูปภาพ (เช่น JPG, PNG)');
+        return;
+      }
+
+      revokePreview(originalImagePreview);
+      const url = URL.createObjectURL(file);
+      setSelectedFile(file);
+      setOriginalImagePreview(url);
+      setResult(null);
+      setErrorMessage(null);
+      void runPredict(file);
+    },
+    [originalImagePreview, revokePreview, runPredict]
+  );
+
+  useEffect(() => {
+    return () => {
+      if (originalImagePreview) URL.revokeObjectURL(originalImagePreview);
+    };
+  }, [originalImagePreview]);
+
+  const onFileInputChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    handleNewImage(event.target.files?.[0]);
+    event.target.value = '';
+  };
+
+  const onDrop = (event: React.DragEvent) => {
+    event.preventDefault();
+    setIsDragging(false);
+    handleNewImage(event.dataTransfer.files?.[0]);
   };
 
   return (
-    <div style={{ fontFamily: 'sans-serif', padding: '20px', maxWidth: '1200px', margin: '0 auto' }}>
-      <h1>🩺 ระบบประเมินและวิเคราะห์บาดแผล (Wound Segmentation)</h1>
-      
-      <div style={{ marginBottom: '20px' }}>
-        <input type="file" accept="image/*" onChange={handleFileChange} />
-        <button 
-          onClick={handleUpload} 
-          disabled={!selectedFile || isLoading}
-          style={{ marginLeft: '10px', padding: '5px 15px', cursor: isLoading ? 'wait' : 'pointer' }}
+    <div className="app">
+      <div className="app__glow" aria-hidden />
+      <header className="app__header">
+        <p className="app__eyebrow">Microsoft × AIAT Hackathon · Group 10</p>
+        <h1 className="app__title">ระบบประเมินและวิเคราะห์บาดแผล</h1>
+        <p className="app__subtitle">
+          อัปโหลดหรือลากวางภาพบาดแผล — ระบบจะวิเคราะห์อัตโนมัติและแสดงผลการแบ่งกลุ่ม (segmentation)
+        </p>
+      </header>
+
+      <section className="upload-card">
+        <div
+          className={`dropzone ${isDragging ? 'dropzone--active' : ''} ${isLoading ? 'dropzone--busy' : ''}`}
+          onDragOver={(e) => {
+            e.preventDefault();
+            setIsDragging(true);
+          }}
+          onDragLeave={() => setIsDragging(false)}
+          onDrop={onDrop}
+          onClick={() => !isLoading && fileInputRef.current?.click()}
+          role="button"
+          tabIndex={0}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              if (!isLoading) fileInputRef.current?.click();
+            }
+          }}
         >
-          {isLoading ? 'กำลังวิเคราะห์...' : 'วิเคราะห์ภาพ'}
-        </button>
-      </div>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*"
+            className="dropzone__input"
+            onChange={onFileInputChange}
+            disabled={isLoading}
+          />
 
-      {result && (
-        <>
-          <h3>ผลลัพธ์การประเมิน (Evaluation Results)</h3>
-          <div style={{ display: 'flex', gap: '20px', marginBottom: '30px' }}>
-            {/* คอลัมน์ที่ 1: ภาพต้นฉบับ */}
-            <div style={{ flex: 1 }}>
-              <p>Original Image</p>
-              <img src={originalImagePreview!} alt="Original" style={{ width: '100%', borderRadius: '8px' }} />
-            </div>
-            
-            {/* คอลัมน์ที่ 2: ภาพ Mask */}
-            <div style={{ flex: 1 }}>
-              <p>Prediction Mask</p>
-              <img src={`data:image/png;base64,${result.mask_base64}`} alt="Mask" style={{ width: '100%', borderRadius: '8px' }} />
-            </div>
-
-            {/* คอลัมน์ที่ 3: ภาพ Overlay */}
-            <div style={{ flex: 1 }}>
-              <p>Overlay (Wound Area)</p>
-              <img src={`data:image/png;base64,${result.overlay_base64}`} alt="Overlay" style={{ width: '100%', borderRadius: '8px' }} />
-            </div>
+          <div className="dropzone__inner">
+            <span className="dropzone__icon" aria-hidden>
+              <svg width="40" height="40" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path
+                  d="M12 16V4m0 0l-4 4m4-4l4 4M4 20h16"
+                  stroke="currentColor"
+                  strokeWidth="1.75"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            </span>
+            <p className="dropzone__title">
+              {isLoading ? 'กำลังวิเคราะห์ภาพ…' : 'ลากวางภาพที่นี่ หรือคลิกเพื่อเลือกไฟล์'}
+            </p>
+            <p className="dropzone__hint">รองรับ JPG, PNG, WEBP — ไม่ต้องกดปุ่มวิเคราะห์เพิ่ม</p>
           </div>
 
-          {/* ตารางข้อมูล */}
-          <h3>ข้อมูลผู้ป่วย/ผลวิเคราะห์</h3>
-          <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
-            <thead>
-              <tr style={{ borderBottom: '2px solid #ccc' }}>
-                <th style={{ padding: '10px' }}>Wound Area (Pixels)</th>
-                <th style={{ padding: '10px' }}>Risk Score</th>
-                <th style={{ padding: '10px' }}>Timeline</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr>
-                <td style={{ padding: '10px' }}>{result.wound_area_pixels.toLocaleString()}</td>
-                <td style={{ padding: '10px' }}>{result.wound_area_pixels > 10000 ? 'High' : 'Medium'}</td>
-                <td style={{ padding: '10px' }}>Day 3</td>
-              </tr>
-            </tbody>
-          </table>
-        </>
+          {selectedFile && originalImagePreview && (
+            <div className="dropzone__thumb">
+              <img src={originalImagePreview} alt="" />
+            </div>
+          )}
+        </div>
+
+        {errorMessage && (
+          <p className="app__error" role="alert">
+            {errorMessage}
+          </p>
+        )}
+      </section>
+
+      {isLoading && (
+        <div className="loading-strip" aria-live="polite">
+          <span className="loading-strip__spinner" />
+          <span>กำลังประมวลผลโมเดล U-Net และสร้างมาสก์…</span>
+        </div>
+      )}
+
+      {result && originalImagePreview && (
+        <section className="results">
+          <div className="results__head">
+            <h2>ผลลัพธ์การประเมิน</h2>
+            <span className="results__badge">
+              พื้นที่บาดแผลโดยประมาณ · {result.wound_area_pixels.toLocaleString()} พิกเซล
+            </span>
+          </div>
+
+          <div className="results__grid">
+            <figure className="result-panel">
+              <figcaption>ภาพต้นฉบับ</figcaption>
+              <div className="result-panel__frame">
+                <img src={originalImagePreview} alt="ภาพต้นฉบับ" />
+              </div>
+            </figure>
+
+            <figure className="result-panel">
+              <figcaption>มาสก์ที่ทำนาย (Prediction mask)</figcaption>
+              <div className="result-panel__frame">
+                <img src={`data:image/png;base64,${result.mask_base64}`} alt="มาสก์การแบ่งกลุ่ม" />
+              </div>
+            </figure>
+
+            <figure className="result-panel">
+              <figcaption>ซ้อนทับบนภาพ (Overlay)</figcaption>
+              <div className="result-panel__frame">
+                <img src={`data:image/png;base64,${result.overlay_base64}`} alt="ภาพซ้อนทับบริเวณบาดแผล" />
+              </div>
+            </figure>
+          </div>
+
+          <div className="metrics">
+            <table className="metrics__table">
+              <thead>
+                <tr>
+                  <th>พื้นที่บาดแผล (พิกเซล)</th>
+                  <th>ระดับความเสี่ยง (ตัวอย่าง)</th>
+                  <th>Timeline (ตัวอย่าง)</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>{result.wound_area_pixels.toLocaleString()}</td>
+                  <td>{result.wound_area_pixels > 10000 ? 'สูง' : 'ปานกลาง'}</td>
+                  <td>วันที่ 3</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
       )}
     </div>
   );
 }
 
-export default App;  
+export default App;
