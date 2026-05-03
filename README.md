@@ -25,8 +25,8 @@ This project is split into two parts:
 Clone the repository first:
 
 ```bash
-git clone https://github.com/<your-org>/microsoft-ai-hack-g10.git
-cd microsoft-ai-hack-g10
+git clone https://github.com/lebrancconvas/Microsoft-AIAT-Hackathon-Group10.git
+cd Microsoft-AIAT-Hackathon-Group10
 ```
 
 ### Web
