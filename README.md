@@ -7,6 +7,10 @@
 - ชวณัฎฐ์ พรหมภักดี (722E75)
 - อิทธิกร คำมี (B1704C)
 
+## Overview
+
+**Microsoft × AIAT Final Hackathon — Group 10.** The project explores how **computer vision** can support **diabetic foot ulcer** care: someone uploads a clinical-style photo of a foot wound, and the system **outlines the wound** on the image and gives a **simple risk-style readout** (based on detected wound area plus symptoms and how long the wound has been present). It is a **demo / prototype** for discussion and education, not a medical device or substitute for a clinician.
+
 ## Model
 
 The app uses a **U-Net** for **binary wound segmentation** on foot-ulcer images: given an RGB photo, the model predicts a single-channel mask (wound vs background). The same architecture and weights power the **`/predict`** API in `api/`.
