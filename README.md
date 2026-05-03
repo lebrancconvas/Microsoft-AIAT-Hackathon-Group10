@@ -7,6 +7,12 @@
 - ชวณัฎฐ์ พรหมภักดี (722E75)
 - อิทธิกร คำมี (B1704C)
 
+## Model
+
+Model Using in this project
+- `model/` — Model built with ****
+  or you can view the model via [The Google Colab](https://colab.research.google.com/drive/1e-sigMWw0QuflJ54r7btq-34b8oiSkzr?usp=sharing)
+
 ## Setup
 
 This project is split into two parts:
