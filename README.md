@@ -159,5 +159,6 @@ The container exposes the API on port `8000`, matching the `VITE_API_URL` shown 
 | Method | Path       | Description                                                                 |
 | ------ | ---------- | --------------------------------------------------------------------------- |
 | `GET`  | `/`        | Health check — returns `{"message": "Hello World"}`.                        |
+| `GET`  | `/docs`    | FastAPI **Swagger UI** — interactive OpenAPI docs; |
 | `POST` | `/predict` | Multipart form: `file` (image), `timeline_day` (int), `symptoms` (CSV str). Returns the wound mask, overlay, area ratio, and risk score. |
 
