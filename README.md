@@ -15,6 +15,11 @@ Wound Wound Wound
 
 **Microsoft × AIAT Final Hackathon — Group 10.** The project explores how **computer vision** can support **diabetic foot ulcer** care: someone uploads a clinical-style photo of a foot wound, and the system **outlines the wound** on the image and gives a **simple risk-style readout** (based on detected wound area plus symptoms and how long the wound has been present). It is a **demo / prototype** for demonstration.  
 
+## Live URLs (Microsoft Azure)
+
+- **Frontend** (Azure Static Web Apps): [https://gentle-mud-0e3cb0a00.7.azurestaticapps.net/](https://gentle-mud-0e3cb0a00.7.azurestaticapps.net/)
+- **Backend (API)** (Azure Container Apps): [https://ai-hack-group10-api.salmontree-b2835120.eastasia.azurecontainerapps.io](https://ai-hack-group10-api.salmontree-b2835120.eastasia.azurecontainerapps.io)
+
 ## Model
 
 The app uses a **U-Net** for **binary wound segmentation** on foot-ulcer images: given an RGB photo, the model predicts a single-channel mask (wound vs background). The same architecture and weights power the **`/predict`** API in `api/`.
