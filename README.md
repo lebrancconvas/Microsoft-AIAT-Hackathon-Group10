@@ -9,9 +9,19 @@
 
 ## Model
 
-Model Using in this project
-- `model/` — Model built with ****
-  or you can view the model via [The Google Colab](https://colab.research.google.com/drive/1e-sigMWw0QuflJ54r7btq-34b8oiSkzr?usp=sharing)
+The app uses a **U-Net** for **binary wound segmentation** on foot-ulcer images: given an RGB photo, the model predicts a single-channel mask (wound vs background). The same architecture and weights power the **`/predict`** API in `api/`.
+
+### Training 
+
+- **`model/Microsoft_X_AIAT_Final_Hackathon_2.ipynb`** — end-to-end setup: dataset paths, **Albumentations** transforms, dataloaders, `UNet`, **BCE with logits + Dice** composite loss, optimizer, training loop, validation metrics (Dice / IoU), checkpointing, and plots.
+
+**Data**: [DFUC 2022 train release](https://www.kaggle.com/datasets/pabodhamallawa/dfuc2022-train-release) on Kaggle (images and masks under `DFUC2022_train_release`). The notebook uses a **stratified train/validation split** by **wound area ratio** to keep validation representative.
+
+**Input geometry and normalization** (aligned with inference in `api/main.py`): resize to **384×512**, then **ImageNet** mean/std normalization (`0.485 / 0.456 / 0.406` and `0.229 / 0.224 / 0.225`).
+
+### Google Colab 
+
+You can open and run the full pipeline (including downloads on Kaggle / Colab) here: [Google Colab — Microsoft × AIAT Hackathon model](https://colab.research.google.com/drive/1e-sigMWw0QuflJ54r7btq-34b8oiSkzr?usp=sharing).
 
 ## Setup
 
